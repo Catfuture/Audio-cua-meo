@@ -872,6 +872,7 @@
           </div>
 
           <div class="pt-1 flex items-center justify-end gap-2">
+            <button id="exportJsonBtn" type="button" class="px-4 py-2.5 rounded-xl theme-elevated border font-semibold hover:opacity-85" style="color: var(--accent);" title="Tải file stories.json chứa toàn bộ truyện">Xuất stories.json</button>
             <button id="cancelQuickAddBtn" type="button" class="px-4 py-2.5 rounded-xl theme-surface border font-semibold hover:opacity-85">Đóng</button>
             <button type="submit" class="px-5 py-2.5 rounded-xl font-bold shadow-sm transition active:scale-95" style="background-color: var(--accent); color: var(--accent-contrast);">
               Thêm vào danh sách
@@ -1446,8 +1447,98 @@
       if(dom.openHelpModalBtn) dom.openHelpModalBtn.onclick = () => toggleModal(dom.helpModal, true);
       if(dom.closeHelpModalBtn) dom.closeHelpModalBtn.onclick = () => toggleModal(dom.helpModal, false);
       
-      if(dom.openQuickAddModalBtn) dom.openQuickAddModalBtn.onclick = () => toggleModal(dom.quickAddStoryModal, true);
+      if(dom.openQuickAddModalBtn) dom.openQuickAddModalBtn.onclick = () => {
+        if(dom.quickExistingStorySelect) {
+          dom.quickExistingStorySelect.innerHTML = state.stories.map((s, i) => `<option value="${i}">${s.title}</option>`).join('');
+        }
+        toggleModal(dom.quickAddStoryModal, true);
+      };
       if(dom.closeQuickAddModalBtn) dom.closeQuickAddModalBtn.onclick = () => toggleModal(dom.quickAddStoryModal, false);
+      if(dom.cancelQuickAddBtn) dom.cancelQuickAddBtn.onclick = () => toggleModal(dom.quickAddStoryModal, false);
+      
+      // Xử lý nạp tệp từ máy tính
+      const processLocalFiles = async (files, defaultTitle) => {
+        const fileArr = Array.from(files).sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
+        let chapters = [];
+        for (let file of fileArr) {
+          if (file.name.endsWith('.txt')) {
+            const text = await file.text();
+            chapters.push({ title: file.name.replace('.txt', ''), content: text });
+          }
+        }
+        if (chapters.length > 0) {
+          state.stories.push({ title: defaultTitle || 'Truyện Mới', chapters: chapters });
+          renderSidebar();
+          showToast(`Đã nạp thành công bộ truyện mới!`);
+          toggleModal(dom.quickAddStoryModal, false);
+        } else {
+          showToast('Không tìm thấy file .txt nào!');
+        }
+      };
+
+      if(dom.quickFolderUploadInput) dom.quickFolderUploadInput.onchange = (e) => {
+        if (!e.target.files.length) return;
+        const folderName = e.target.files[0].webkitRelativePath.split('/')[0];
+        const title = dom.quickBatchStoryTitleInput.value || folderName || 'Truyện Mới';
+        processLocalFiles(e.target.files, title);
+        e.target.value = '';
+      };
+
+      if(dom.quickMultiFilesInput) dom.quickMultiFilesInput.onchange = (e) => {
+        if (!e.target.files.length) return;
+        const title = dom.quickBatchStoryTitleInput.value || 'Truyện Mới';
+        processLocalFiles(e.target.files, title);
+        e.target.value = '';
+      };
+
+      // Xử lý form thêm chương thủ công
+      if(dom.quickAddStoryForm) dom.quickAddStoryForm.onsubmit = (e) => {
+        e.preventDefault();
+        const mode = document.querySelector('input[name="quickAddMode"]:checked').value;
+        const cTitle = dom.quickChapterTitleInput.value.trim();
+        const cContent = dom.quickChapterContentInput.value.trim();
+        if(!cTitle || !cContent) return showToast('Vui lòng nhập tên và nội dung chương!');
+        
+        if(mode === 'new_story') {
+          const sTitle = dom.quickStoryTitleInput.value.trim() || 'Truyện Mới';
+          state.stories.push({ title: sTitle, chapters: [{ title: cTitle, content: cContent }] });
+        } else {
+          const sIdx = parseInt(dom.quickExistingStorySelect.value);
+          if(isNaN(sIdx) || !state.stories[sIdx]) return showToast('Vui lòng chọn truyện hợp lệ!');
+          state.stories[sIdx].chapters.push({ title: cTitle, content: cContent });
+        }
+        
+        renderSidebar();
+        showToast('Đã thêm chương thành công!');
+        dom.quickAddStoryForm.reset();
+        toggleModal(dom.quickAddStoryModal, false);
+      };
+
+      // Radio button chuyển chế độ Thêm mới/Có sẵn
+      document.querySelectorAll('input[name="quickAddMode"]').forEach(radio => {
+        radio.onchange = (e) => {
+          if(e.target.value === 'new_story') {
+            dom.newStoryTitleGroup.classList.remove('hidden');
+            dom.existingStorySelectGroup.classList.add('hidden');
+          } else {
+            dom.newStoryTitleGroup.classList.add('hidden');
+            dom.existingStorySelectGroup.classList.remove('hidden');
+          }
+        };
+      });
+
+      // Xuất file JSON
+      if(dom.exportJsonBtn) dom.exportJsonBtn.onclick = () => {
+        if(state.stories.length === 0) return showToast('Thư viện đang trống!');
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state.stories, null, 2));
+        const anchor = document.createElement('a');
+        anchor.setAttribute("href", dataStr);
+        anchor.setAttribute("download", "stories.json");
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        showToast('Đã tải xuống stories.json thành công!');
+      };
       
       if(dom.openBookmarksModalBtn) dom.openBookmarksModalBtn.onclick = () => toggleModal(dom.bookmarksModal, true);
       if(dom.closeBookmarksModalBtn) dom.closeBookmarksModalBtn.onclick = () => toggleModal(dom.bookmarksModal, false);
