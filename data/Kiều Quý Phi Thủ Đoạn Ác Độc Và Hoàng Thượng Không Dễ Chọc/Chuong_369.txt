@@ -462,4 +462,4 @@ Một sự thay đổi mà Hoàng hậu tuyệt đối không thể xem nhẹ.
 
 Hết Chương 369 – Trách phạt.
 
-*Lưu ý: Tệp nguồn hiện tại kết thúc giữa đoạn kể về phản ứng của Hoàng hậu trước việc Lý quý nhân được thăng thành Lý tần. Phần kết phía trên được khép lại theo nội dung đã có, không bổ sung tình tiết mới. Chương tiếp theo cần tệp chứa Chương 370.*
+Lưu ý: Tệp nguồn hiện tại kết thúc giữa đoạn kể về phản ứng của Hoàng hậu trước việc Lý quý nhân được thăng thành Lý tần. Phần kết phía trên được khép lại theo nội dung đã có, không bổ sung tình tiết mới. Chương tiếp theo cần tệp chứa Chương 370.
