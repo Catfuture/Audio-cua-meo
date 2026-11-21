@@ -396,11 +396,11 @@
   <div id="mainContentWrapper" class="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-4 pt-3.5 sm:pt-5 pb-48 lg:pb-52 flex gap-5">
 
     <!-- Lớp nền mờ khi mở ngăn kéo mục lục trên thiết bị di động -->
-    <div id="mobileSidebarBackdrop" class="hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-xs lg:hidden"></div>
+  <div id="mobileSidebarBackdrop" class="hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-xs lg:hidden"></div>
 
-    <!-- Cột trái: Bộ chọn truyện & Danh sách chương (Drawer trượt trên mobile) -->
-    <aside id="chapterSidebar" class="hidden lg:flex flex-col w-[85vw] max-w-[320px] lg:w-72 lg:max-w-none shrink-0 theme-surface border rounded-2xl overflow-hidden lg:h-[calc(100vh-14.5rem)] lg:sticky lg:top-20">
-      <div class="p-3.5 sm:p-4 border-b theme-border space-y-2.5">
+  <!-- Cột trái: Bộ chọn truyện & Danh sách chương (Drawer trượt trên mobile) -->
+  <aside id="chapterSidebar" class="hidden fixed inset-y-0 left-0 z-50 h-[100dvh] w-[85vw] max-w-[320px] lg:static lg:flex flex-col lg:w-72 lg:max-w-none shrink-0 theme-surface border-r lg:border lg:rounded-2xl overflow-hidden lg:h-[calc(100vh-14.5rem)] lg:sticky lg:top-20 shadow-2xl lg:shadow-none">
+    <div class="p-3.5 sm:p-4 border-b theme-border space-y-2.5">
         <div class="flex items-center justify-between">
           <h2 class="font-bold text-sm">Thư viện truyện</h2>
           <button id="closeDrawerBtn" type="button" aria-label="Đóng mục lục" class="lg:hidden p-2 rounded-xl theme-elevated">
@@ -953,7 +953,7 @@
   </div>
 
   <!-- Khung thông báo nhanh (Toast) -->
-  <div id="toastContainer" class="fixed top-16 sm:top-20 inset-x-3 sm:inset-x-auto sm:right-4 z-50 flex flex-col items-center sm:items-end gap-2 pointer-events-none"></div>
+    <div id="toastContainer" class="fixed top-16 sm:top-20 inset-x-3 sm:inset-x-auto sm:right-4 z-50 flex flex-col items-center sm:items-end gap-2 pointer-events-none"></div>
 
   <script>
     // 1. Cấu hình Worker cho PDF.js
@@ -1198,6 +1198,23 @@
       });
     }
 
+    // --- CÁC HÀM ĐÓNG / MỞ NGĂN KÉO MỤC LỤC TRÊN MOBILE ---
+    function openMobileSidebar() {
+      if (dom.chapterSidebar) {
+        dom.chapterSidebar.classList.remove('hidden');
+        dom.chapterSidebar.classList.add('flex');
+      }
+      if (dom.mobileSidebarBackdrop) dom.mobileSidebarBackdrop.classList.remove('hidden');
+    }
+
+    function closeMobileSidebar() {
+      if (dom.chapterSidebar) {
+        dom.chapterSidebar.classList.add('hidden');
+        dom.chapterSidebar.classList.remove('flex');
+      }
+      if (dom.mobileSidebarBackdrop) dom.mobileSidebarBackdrop.classList.add('hidden');
+    }
+
     // 7. Logic Đọc / Phát Truyện
     async function playSentence() {
       if (!state.isPlaying) return;
@@ -1280,6 +1297,11 @@
       renderChapter();
       renderSidebar();
       if (state.isPlaying) play();
+
+      // Tự động đóng mục lục trên mobile khi đã chọn xong chương
+      if (window.innerWidth < 1024) {
+        closeMobileSidebar();
+      }
     }
 
     function renderChapter() {
@@ -1529,9 +1551,14 @@
       if(dom.voiceSelect) dom.voiceSelect.onchange = (e) => { state.voiceId = e.target.value; saveSettings(); };
 
       // Ngăn kéo Mobile (Sidebar Drawer)
-      dom.toggleDrawerBtn.onclick = () => { dom.chapterSidebar.classList.remove('hidden'); dom.mobileSidebarBackdrop.classList.remove('hidden'); };
-      dom.closeDrawerBtn.onclick = () => { dom.chapterSidebar.classList.add('hidden'); dom.mobileSidebarBackdrop.classList.add('hidden'); };
-      dom.mobileSidebarBackdrop.onclick = dom.closeDrawerBtn;
+      dom.toggleDrawerBtn.onclick = openMobileSidebar;
+      dom.closeDrawerBtn.onclick = closeMobileSidebar;
+      dom.mobileSidebarBackdrop.onclick = closeMobileSidebar;
+
+      // Nút chạm hiển thị tên chương ở thanh Player dưới cùng để mở mục lục trên mobile
+      if(dom.playerChapterInfoBtn) {
+        dom.playerChapterInfoBtn.onclick = openMobileSidebar;
+      }
 
       // Đóng/Mở các Modal phụ trợ
       const toggleModal = (modal, show) => { if (show) modal.classList.remove('hidden'); else modal.classList.add('hidden'); };
