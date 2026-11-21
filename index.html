@@ -1405,6 +1405,38 @@
     }
 
     // 9. Cài đặt các Sự kiện Giao diện (Event Listeners)
+    let sleepTimerInterval; // Biến lưu trữ vòng lặp hẹn giờ
+
+    function startSleepTimer(minutes) {
+      clearInterval(sleepTimerInterval);
+      if (minutes === 0) {
+        if(dom.sleepTimerCountdown) dom.sleepTimerCountdown.classList.add('hidden');
+        if(dom.sleepTimerSelect) dom.sleepTimerSelect.value = "0";
+        return;
+      }
+      
+      const endTime = Date.now() + minutes * 60 * 1000;
+      if(dom.sleepTimerCountdown) dom.sleepTimerCountdown.classList.remove('hidden');
+
+      const updateTimer = () => {
+        const remaining = endTime - Date.now();
+        if (remaining <= 0) {
+          clearInterval(sleepTimerInterval);
+          if(dom.sleepTimerCountdown) dom.sleepTimerCountdown.classList.add('hidden');
+          if(dom.sleepTimerSelect) dom.sleepTimerSelect.value = "0";
+          pause();
+          showToast("Đã hết thời gian hẹn giờ. Đang tạm dừng đọc.");
+          return;
+        }
+        const m = Math.floor(remaining / 60000);
+        const s = Math.floor((remaining % 60000) / 1000);
+        if(dom.sleepTimerCountdown) dom.sleepTimerCountdown.textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
+      };
+      
+      updateTimer();
+      sleepTimerInterval = setInterval(updateTimer, 1000);
+    }
+
     function setupEvents() {
       // Điều khiển Playback
       dom.playPauseBtn.onclick = togglePlay;
@@ -1424,12 +1456,72 @@
       dom.increaseFontBtn.onclick = () => { state.fontSize += 1; applySettings(); saveSettings(); };
       dom.decreaseFontBtn.onclick = () => { state.fontSize = Math.max(12, state.fontSize - 1); applySettings(); saveSettings(); };
 
-      const updateSpeed = (val) => { state.rate = parseFloat(val); applySettings(); saveSettings(); };
-      dom.speedRangeSlider.oninput = (e) => updateSpeed(e.target.value);
+      // Xử lý Tốc độ đọc
+      const updateSpeed = (val) => { 
+        state.rate = parseFloat(val); 
+        applySettings(); 
+        saveSettings(); 
+        // Áp dụng ngay lập tức cho giọng Cloud nếu đang phát
+        if (state.isPlaying && state.voiceId === 'cloud:vi-female') {
+          state.cloudAudio.playbackRate = state.rate;
+        }
+      };
+      
+      if(dom.speedRangeSlider) dom.speedRangeSlider.oninput = (e) => updateSpeed(e.target.value);
       if(dom.mobileSpeedRangeSlider) dom.mobileSpeedRangeSlider.oninput = (e) => updateSpeed(e.target.value);
       
+      // Gắn sự kiện cho các nút chọn tốc độ nhanh (0.75x, 1.0x, 1.25x...)
+      document.querySelectorAll('.speed-preset-btn').forEach(btn => {
+        btn.onclick = () => updateSpeed(btn.dataset.speed);
+      });
+
+      // Nút chạm đổi nhanh vòng lặp tốc độ trên mobile
+      if (dom.mobileQuickSpeedBtn) {
+        const speeds = [0.75, 1.0, 1.25, 1.5, 2.0];
+        dom.mobileQuickSpeedBtn.onclick = () => {
+          let currentIdx = speeds.indexOf(state.rate);
+          if (currentIdx === -1) currentIdx = 1;
+          let nextIdx = (currentIdx + 1) % speeds.length;
+          updateSpeed(speeds[nextIdx]);
+        };
+      }
+
+      // Xử lý Hẹn giờ tắt
+      if (dom.sleepTimerSelect) {
+        dom.sleepTimerSelect.onchange = (e) => {
+          startSleepTimer(parseInt(e.target.value));
+        };
+      }
+
+      // Nút thu gọn / mở rộng bảng giọng đọc trên mobile
+      if (dom.toggleVoicePanelBtn) {
+        dom.toggleVoicePanelBtn.onclick = () => {
+          const panel = dom.voiceControlsRow;
+          if (panel.classList.contains('hidden')) {
+            panel.classList.remove('hidden');
+            panel.classList.add('flex');
+            if(dom.toggleVoicePanelArrow) dom.toggleVoicePanelArrow.textContent = '▾';
+          } else {
+            panel.classList.add('hidden');
+            panel.classList.remove('flex');
+            if(dom.toggleVoicePanelArrow) dom.toggleVoicePanelArrow.textContent = '▴';
+          }
+        };
+      }
+
+      // Xử lý Cao độ (Pitch) & Sắc thái
       const updatePitch = (val) => { state.pitch = parseFloat(val); applySettings(); saveSettings(); };
       if(dom.pitchRangeSlider) dom.pitchRangeSlider.oninput = (e) => updatePitch(e.target.value);
+      
+      if (dom.voicePresetSelect) {
+        dom.voicePresetSelect.onchange = (e) => {
+          const val = e.target.value;
+          if (val !== 'custom') {
+            updatePitch(val);
+            if (dom.pitchRangeSlider) dom.pitchRangeSlider.value = val;
+          }
+        };
+      }
 
       if(dom.autoNextChapterCheckbox) dom.autoNextChapterCheckbox.onchange = (e) => { state.autoNext = e.target.checked; applySettings(); saveSettings(); };
       if(dom.autoScrollCheckbox) dom.autoScrollCheckbox.onchange = (e) => { state.autoScroll = e.target.checked; applySettings(); saveSettings(); };
