@@ -1,0 +1,1700 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>Nghe Truyện Audio Cá Nhân</title>
+  <!-- Tải Tailwind CSS qua CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Tải thư viện PDF.js qua CDN để trích xuất văn bản từ tệp .pdf -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <!-- Font chữ Inter & Literata tối ưu cho đọc sách tiếng Việt -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Literata:opsz,wght@7..72,400;7..72,500&display=swap" rel="stylesheet">
+  <style>
+    /* =========================================================================
+       HỆ THỐNG BIẾN MÀU CHO 3 CHẾ ĐỘ ĐỌC SÁCH (SÁNG / VÀNG SEPIA / TỐI)
+       ========================================================================= */
+    :root,
+    body[data-theme="light"] {
+      --bg-page: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-elevated: #f1f5f9;
+      --bg-hover: #e2e8f0;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #64748b;
+      --border-color: #e2e8f0;
+      --accent: #d97706;
+      --accent-hover: #b45309;
+      --accent-contrast: #ffffff;
+      --accent-soft: rgba(217, 119, 6, 0.12);
+      --highlight-bg: #fef3c7;
+      --highlight-text: #78350f;
+      --highlight-ring: rgba(217, 119, 6, 0.48);
+      --shadow-card: 0 4px 20px -2px rgba(15, 23, 42, 0.06);
+    }
+
+    body[data-theme="sepia"] {
+      --bg-page: #f4ecd8;
+      --bg-surface: #fbf6ea;
+      --bg-elevated: #efe4cc;
+      --bg-hover: #e5d6b7;
+      --text-primary: #3b2f1e;
+      --text-secondary: #5c4b32;
+      --text-muted: #7c6849;
+      --border-color: #dfd1b5;
+      --accent: #b45309;
+      --accent-hover: #92400e;
+      --accent-contrast: #fffbeb;
+      --accent-soft: rgba(180, 83, 9, 0.13);
+      --highlight-bg: #fde68a;
+      --highlight-text: #451a03;
+      --highlight-ring: rgba(180, 83, 9, 0.48);
+      --shadow-card: 0 4px 20px -2px rgba(59, 47, 30, 0.08);
+    }
+
+    body[data-theme="dark"] {
+      --bg-page: #0b1120;
+      --bg-surface: #111827;
+      --bg-elevated: #1e293b;
+      --bg-hover: #334155;
+      --text-primary: #f1f5f9;
+      --text-secondary: #cbd5e1;
+      --text-muted: #94a3b8;
+      --border-color: #1f2937;
+      --accent: #f59e0b;
+      --accent-hover: #fbbf24;
+      --accent-contrast: #0f172a;
+      --accent-soft: rgba(245, 158, 11, 0.16);
+      --highlight-bg: rgba(245, 158, 11, 0.28);
+      --highlight-text: #fde68a;
+      --highlight-ring: rgba(245, 158, 11, 0.55);
+      --shadow-card: 0 6px 24px -4px rgba(0, 0, 0, 0.45);
+    }
+
+    html {
+      overflow-x: hidden;
+      max-width: 100vw;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-page);
+      color: var(--text-primary);
+      overflow-x: hidden;
+      -webkit-tap-highlight-color: transparent;
+      transition: background-color 0.22s ease, color 0.22s ease;
+    }
+
+    .mobile-scroll-contain {
+      overscroll-behavior-y: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .pb-safe {
+      padding-bottom: max(0.625rem, env(safe-area-inset-bottom));
+    }
+
+    /* Ngăn trình duyệt iOS Safari tự động phóng to màn hình khi chạm vào ô nhập/chọn */
+    @media (max-width: 639px) {
+      input[type="text"],
+      input[type="password"],
+      textarea,
+      select {
+        font-size: 16px !important;
+      }
+    }
+
+    .theme-surface {
+      background-color: var(--bg-surface);
+      border-color: var(--border-color);
+      box-shadow: var(--shadow-card);
+    }
+
+    .theme-elevated {
+      background-color: var(--bg-elevated);
+      border-color: var(--border-color);
+    }
+
+    .theme-text-secondary {
+      color: var(--text-secondary);
+    }
+
+    .theme-text-muted {
+      color: var(--text-muted);
+    }
+
+    .theme-border {
+      border-color: var(--border-color);
+    }
+
+    /* =========================================================================
+       ĐỊNH DẠNG ĐOẠN VĂN & CÂU VĂN XUỐNG DÒNG RÕ RÀNG
+       ========================================================================= */
+    .story-reader-body {
+      font-family: 'Literata', 'Inter', Georgia, serif;
+    }
+
+    .story-paragraph {
+      display: block;
+      margin-bottom: 1.15em;
+      line-height: 1.85;
+      text-align: left;
+      word-break: break-word;
+    }
+
+    .story-paragraph:last-child {
+      margin-bottom: 0;
+    }
+
+    .sentence {
+      display: inline;
+      cursor: pointer;
+      border-radius: 0.375rem;
+      padding: 0.1rem 0.22rem;
+      transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .sentence:hover {
+      background-color: var(--accent-soft);
+    }
+
+    .sentence-active {
+      background-color: var(--highlight-bg) !important;
+      color: var(--highlight-text) !important;
+      box-shadow: 0 0 0 2px var(--highlight-ring);
+      font-weight: 500;
+    }
+
+    /* Thanh trượt tốc độ đọc & cao độ */
+    input[type="range"].speed-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--bg-hover);
+      outline: none;
+    }
+
+    input[type="range"].speed-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      border: 2px solid var(--bg-surface);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    }
+
+    /* Thanh cuộn tinh gọn */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.35);
+      border-radius: 9999px;
+    }
+
+    /* Hiệu ứng rung nhẹ khi nhập sai mã khóa truy cập */
+    @keyframes gateShake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-8px); }
+      40%, 80% { transform: translateX(8px); }
+    }
+
+    .gate-shake {
+      animation: gateShake 0.38s ease-in-out;
+    }
+  </style>
+</head>
+<body data-theme="sepia" class="min-h-[100dvh] flex flex-col">
+
+  <!-- =======================================================================
+       0. LOADING PAGE & CỔNG XÁC THỰC MÃ KHÓA TRUY CẬP (KEY PASSWORD)
+       ======================================================================= -->
+  <div id="authGateOverlay" class="fixed inset-0 z-[100] flex items-center justify-center p-4 transition-opacity duration-500" style="background-color: var(--bg-page);">
+    <div id="authGateCard" class="theme-surface border rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl space-y-6">
+      <!-- Biểu tượng & Tiêu đề ứng dụng -->
+      <div class="text-center space-y-2.5">
+        <div class="w-14 h-14 mx-auto rounded-2xl flex items-center justify-center shadow-md" style="background-color: var(--accent); color: var(--accent-contrast);">
+          <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2.1" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+        </div>
+        <h2 class="text-xl sm:text-2xl font-bold tracking-tight">Nghe Truyện Audio</h2>
+        <p class="text-xs sm:text-sm theme-text-secondary">
+          Không gian nghe truyện cá nhân • Nhập mã khóa để tiếp tục
+        </p>
+      </div>
+
+      <!-- Thanh trạng thái tải dữ liệu nền (Loading Progress) -->
+      <div class="p-3 rounded-2xl theme-elevated border space-y-2">
+        <div class="flex items-center justify-between text-[11px] sm:text-xs">
+          <span id="authLoadingStatusText" class="font-medium theme-text-secondary">Đang tải dữ liệu thư viện truyện...</span>
+          <span id="authLoadingPercentText" class="font-bold" style="color: var(--accent);">35%</span>
+        </div>
+        <div class="w-full h-1.5 rounded-full overflow-hidden" style="background-color: var(--bg-hover);">
+          <div id="authLoadingBar" class="h-full rounded-full transition-all duration-500" style="width: 35%; background-color: var(--accent);"></div>
+        </div>
+      </div>
+
+      <!-- Biểu mẫu nhập Key Password -->
+      <form id="authGateForm" class="space-y-4" autocomplete="off">
+        <div class="space-y-1.5">
+          <label for="authKeyInput" class="block text-xs font-semibold theme-text-secondary">
+            Mã khóa truy cập (Key Password)
+          </label>
+          <div class="relative flex items-center">
+            <input
+              id="authKeyInput"
+              type="password"
+              required
+              autofocus
+              placeholder="Nhập mã khóa để mở khóa..."
+              class="w-full min-h-[46px] pl-4 pr-11 py-2.5 rounded-xl theme-elevated border text-sm font-medium focus:outline-none transition"
+            >
+            <button
+              id="toggleAuthKeyVisibilityBtn"
+              type="button"
+              aria-label="Hiện hoặc ẩn mã khóa"
+              class="absolute right-2.5 p-2 rounded-lg theme-text-muted hover:opacity-80 transition"
+            >
+              <svg id="authEyeOpenIcon" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+              <svg id="authEyeClosedIcon" class="w-4 h-4 hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+              </svg>
+            </button>
+          </div>
+          <p id="authErrorMsg" class="hidden text-xs font-semibold text-red-600 dark:text-red-400 pt-1">
+            Mã khóa không chính xác. Vui lòng thử lại!
+          </p>
+        </div>
+
+        <label class="inline-flex items-center gap-2 text-xs theme-text-secondary cursor-pointer select-none">
+          <input id="authRememberCheckbox" type="checkbox" class="w-4 h-4 rounded" style="accent-color: var(--accent);">
+          <span>Ghi nhớ truy cập trên thiết bị này</span>
+        </label>
+
+        <button
+          id="authSubmitBtn"
+          type="submit"
+          class="w-full min-h-[46px] px-5 py-3 rounded-xl font-bold text-sm shadow-md transition active:scale-95 flex items-center justify-center gap-2"
+          style="background-color: var(--accent); color: var(--accent-contrast);"
+        >
+          <span>Mở khóa &amp; Vào trang</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+          </svg>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- =======================================================================
+       1. THANH ĐIỀU HƯỚNG TRÊN CÙNG (HEADER TỐI ƯU GỌN CHO MOBILE & HOSTING)
+       ======================================================================= -->
+  <header class="sticky top-0 z-30 backdrop-blur-md theme-surface border-b px-2.5 sm:px-4 py-2 sm:py-3">
+    <div class="max-w-6xl mx-auto flex items-center justify-between gap-1.5 sm:gap-2">
+      <!-- Tiêu đề ứng dụng & trạng thái nguồn dữ liệu data/ -->
+      <div class="flex items-center gap-2 sm:gap-2.5 min-w-0">
+        <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm" style="background-color: var(--accent); color: var(--accent-contrast);">
+          <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+          </svg>
+        </div>
+        <div class="min-w-0">
+          <h1 class="text-sm sm:text-base font-bold truncate">Nghe Truyện Audio</h1>
+          <p id="dataSourceSubtitle" class="text-[11px] sm:text-xs theme-text-muted truncate">Đang quét thư mục data/...</p>
+        </div>
+      </div>
+
+      <!-- Cụm nút thao tác: Tối ưu vùng chạm 40px+ cho điện thoại -->
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <!-- Nút mở mục lục trên điện thoại / máy tính bảng -->
+        <button id="toggleDrawerBtn" type="button" class="lg:hidden inline-flex items-center gap-1 min-h-[40px] px-2.5 py-2 rounded-xl theme-elevated border text-xs font-semibold transition active:scale-95">
+          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h10" />
+          </svg>
+          <span>Mục lục</span>
+          <span class="px-1.5 py-0.2 rounded-full text-[10px] font-bold" style="background-color: var(--accent-soft); color: var(--accent);" id="mobileChapterCount">2</span>
+        </button>
+
+        <!-- Nút mở Mục đánh dấu chương -->
+        <button id="openBookmarksModalBtn" type="button" class="inline-flex items-center gap-1.5 min-h-[40px] px-2.5 sm:px-3 py-2 rounded-xl theme-elevated border text-xs sm:text-sm font-semibold transition active:scale-95" title="Xem và quản lý toàn bộ chương đã đánh dấu (Phím tắt: M)">
+          <svg class="w-4 h-4 shrink-0" style="color: var(--accent);" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+          </svg>
+          <span class="hidden md:inline">Mục đánh dấu</span>
+          <span id="headerBookmarkCountBadge" class="px-1.5 py-0.2 rounded-full text-[11px] font-bold" style="background-color: var(--accent-soft); color: var(--accent);">0</span>
+        </button>
+
+        <!-- Nút Nạp thêm truyện ([Tên truyện]/Chuong_1.txt... hoặc dán văn bản) -->
+        <button id="openQuickAddModalBtn" type="button" class="inline-flex items-center gap-1 min-h-[40px] px-2.5 sm:px-3.5 py-2 rounded-xl font-semibold text-xs sm:text-sm shadow-sm transition active:scale-95" style="background-color: var(--accent); color: var(--accent-contrast);" title="Nạp thư mục [Tên truyện]/Chuong_1.txt... hoặc dán truyện mới">
+          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          <span>Nạp<span class="hidden sm:inline"> truyện</span></span>
+        </button>
+
+        <!-- Nút quét lại dữ liệu từ thư mục data/ trên hosting -->
+        <button id="reloadHostingDataBtn" type="button" class="hidden sm:inline-flex items-center gap-1.5 min-h-[40px] px-3 py-2 rounded-xl theme-elevated border text-xs sm:text-sm font-medium transition hover:opacity-90" title="Tải lại toàn bộ truyện mới từ thư mục data/ trên hosting">
+          <svg class="w-4 h-4 shrink-0" style="color: var(--accent);" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <span class="hidden md:inline">Làm mới data/</span>
+        </button>
+
+        <button id="openHelpModalBtn" type="button" class="hidden sm:inline-flex items-center gap-1.5 min-h-[40px] px-3 py-2 rounded-xl theme-elevated border text-xs sm:text-sm font-medium transition hover:opacity-90" title="Hướng dẫn cấu trúc thư mục data/ trên hosting">
+          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span class="hidden md:inline">Hướng dẫn</span>
+        </button>
+
+        <!-- Menu mở rộng dành riêng cho màn hình điện thoại (< 640px) -->
+        <div class="relative sm:hidden">
+          <button id="mobileMoreMenuBtn" type="button" aria-label="Thêm tùy chọn" class="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl theme-elevated border transition active:scale-95">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />
+            </svg>
+          </button>
+          <div id="mobileMoreMenuDropdown" class="hidden absolute right-0 mt-2 w-60 rounded-2xl theme-surface border shadow-xl py-1.5 z-50 text-xs">
+            <button id="mobileMenuReloadDataBtn" type="button" class="w-full px-4 py-3 text-left flex items-center gap-2.5 font-semibold hover:opacity-80" style="color: var(--accent);">
+              <span>🔄</span>
+              <span>Làm mới dữ liệu từ data/</span>
+            </button>
+            <button id="mobileMenuQuickAddBtn" type="button" class="w-full px-4 py-3 text-left flex items-center gap-2.5 font-medium hover:opacity-80">
+              <span>📂</span>
+              <span>Nạp tệp [Tên truyện]/Chuong_1.txt</span>
+            </button>
+            <div class="my-1 border-t theme-border"></div>
+            <button id="mobileMenuHelpBtn" type="button" class="w-full px-4 py-3 text-left flex items-center gap-2.5 font-medium hover:opacity-80">
+              <span>ℹ️</span>
+              <span>Hướng dẫn cấu trúc data/</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- =======================================================================
+       2. KHU VỰC NỘI DUNG CHÍNH (SIDEBAR CHỌN TRUYỆN/CHƯƠNG + KHUNG ĐỌC)
+       ======================================================================= -->
+  <div id="mainContentWrapper" class="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-4 pt-3.5 sm:pt-5 pb-48 lg:pb-52 flex gap-5">
+
+    <!-- Lớp nền mờ khi mở ngăn kéo mục lục trên thiết bị di động -->
+  <div id="mobileSidebarBackdrop" class="hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-xs lg:hidden"></div>
+
+  <!-- Cột trái: Bộ chọn truyện & Danh sách chương (Drawer trượt trên mobile) -->
+  <aside id="chapterSidebar" class="hidden fixed inset-y-0 left-0 z-50 h-[100dvh] w-[85vw] max-w-[320px] lg:static lg:flex flex-col lg:w-72 lg:max-w-none shrink-0 theme-surface border-r lg:border lg:rounded-2xl overflow-hidden lg:h-[calc(100vh-14.5rem)] lg:sticky lg:top-20 shadow-2xl lg:shadow-none">
+    <div class="p-3.5 sm:p-4 border-b theme-border space-y-2.5">
+        <div class="flex items-center justify-between">
+          <h2 class="font-bold text-sm">Thư viện truyện</h2>
+          <button id="closeDrawerBtn" type="button" aria-label="Đóng mục lục" class="lg:hidden p-2 rounded-xl theme-elevated">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Dropdown chọn bộ truyện -->
+        <div>
+          <label for="storySelect" class="sr-only">Chọn bộ truyện</label>
+          <select id="storySelect" class="w-full px-3 py-2 rounded-xl theme-elevated border text-xs font-semibold focus:outline-none truncate">
+            <option value="0">Truyện Mẫu: Khu Vườn Ánh Trăng</option>
+          </select>
+        </div>
+
+        <p id="sidebarStatsText" class="text-xs theme-text-muted">2 chương sẵn sàng</p>
+      </div>
+
+      <!-- Khu vực Mục đánh dấu chương thu gọn ngay trên thanh bên -->
+      <div id="sidebarBookmarksSection" class="border-b theme-border" style="background-color: var(--accent-soft);">
+        <button id="toggleSidebarBookmarksBtn" type="button" class="w-full px-3.5 py-2.5 flex items-center justify-between text-left text-xs font-bold transition hover:opacity-85">
+          <span class="inline-flex items-center gap-1.5" style="color: var(--accent);">
+            <span>★ Mục đánh dấu chương</span>
+            <span id="sidebarBookmarkCountBadge" class="px-1.5 py-0.5 rounded-full text-[10px] font-bold" style="background-color: var(--bg-surface); color: var(--accent);">0</span>
+          </span>
+          <span id="sidebarBookmarksChevron" class="text-[11px] theme-text-muted">▾</span>
+        </button>
+        <div id="sidebarBookmarksBody" class="px-2.5 pb-2.5 space-y-1.5 max-h-44 overflow-y-auto">
+          <div id="sidebarBookmarkList" class="space-y-1"></div>
+        </div>
+      </div>
+
+      <!-- Ô tìm kiếm chương & Bộ lọc Đánh dấu -->
+      <div class="p-3 border-b theme-border space-y-2">
+        <input id="chapterSearchInput" type="text" placeholder="Tìm nhanh chương..." class="w-full px-3 py-2 rounded-xl theme-elevated border text-xs focus:outline-none">
+        <div class="grid grid-cols-2 gap-1.5">
+          <button id="filterAllChaptersBtn" type="button" class="px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition">
+            Tất cả
+          </button>
+          <button id="filterBookmarkedChaptersBtn" type="button" class="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition">
+            <span>★ Đánh dấu</span>
+            <span id="bookmarkedCountBadge" class="px-1.5 py-0.2 rounded-full text-[10px] font-bold" style="background-color: var(--accent-soft); color: var(--accent);">0</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Danh sách các chương -->
+      <div id="chapterListContainer" class="flex-1 overflow-y-auto mobile-scroll-contain p-2 space-y-1"></div>
+
+      <!-- Gợi ý cấu trúc thư mục data trên hosting -->
+      <div class="p-3 border-t theme-border text-[11px] theme-text-muted text-center leading-relaxed">
+        Thư mục hosting: <code>data/[Tên truyện]/Chuong_1.txt</code>
+      </div>
+    </aside>
+
+    <!-- Cột phải: Khung hiển thị nội dung truyện & điều khiển đọc -->
+    <main class="flex-1 min-w-0 space-y-3.5 sm:space-y-4">
+
+      <!-- Thẻ tiêu đề chương & thanh công cụ tùy chỉnh -->
+      <section class="theme-surface border rounded-2xl p-3.5 sm:p-6 space-y-3.5 sm:space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="min-w-0 space-y-1">
+            <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <span id="storyTitleBadge" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-semibold max-w-full truncate" style="background-color: var(--accent-soft); color: var(--accent);">
+                Truyện Mẫu: Khu Vườn Ánh Trăng
+              </span>
+              <span id="chapterBadge" class="text-xs font-medium theme-text-secondary">
+                Chương 1 / 2
+              </span>
+              <span id="sentenceProgressText" class="text-xs theme-text-muted">• Câu 0 / 0</span>
+            </div>
+            <h2 id="chapterTitleHeading" class="text-base sm:text-xl font-bold leading-snug">
+              Chương 1: Tiếng chuông gió bên hiên nhà
+            </h2>
+            <p id="chapterFileMeta" class="text-[11px] sm:text-xs theme-text-muted">
+              Chạm vào bất kỳ câu văn nào bên dưới để nhảy tới và nghe ngay từ câu đó
+            </p>
+          </div>
+
+          <!-- Nút đánh dấu & chuyển chương nhanh (Tối ưu vùng chạm trên mobile) -->
+          <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 shrink-0">
+            <button id="toggleBookmarkBtn" type="button" title="Đánh dấu chương này để mở lại nhanh (Phím tắt: B)" class="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 sm:py-2 rounded-xl theme-elevated border text-xs font-semibold transition active:scale-95 hover:opacity-90">
+              <svg id="bookmarkOutlineIcon" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              </svg>
+              <svg id="bookmarkFilledIcon" class="w-4 h-4 shrink-0 hidden" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              </svg>
+              <span id="toggleBookmarkText">Đánh dấu</span>
+            </button>
+            <button id="updateBookmarkPositionBtn" type="button" title="Cập nhật vị trí câu đang nghe vào dấu trang của chương này" class="hidden inline-flex items-center justify-center gap-1 px-2.5 py-2.5 sm:py-2 rounded-xl theme-elevated border text-xs font-semibold transition active:scale-95 hover:opacity-90">
+              <span>↻ Lưu vị trí</span>
+            </button>
+            <button id="prevChapterTopBtn" type="button" class="px-3 py-2.5 sm:py-2 rounded-xl theme-elevated border text-xs font-semibold transition disabled:opacity-40 active:scale-95 hover:opacity-90">
+              ← Chương trước
+            </button>
+            <button id="nextChapterTopBtn" type="button" class="px-3 py-2.5 sm:py-2 rounded-xl theme-elevated border text-xs font-semibold transition disabled:opacity-40 active:scale-95 hover:opacity-90">
+              Chương sau →
+            </button>
+          </div>
+        </div>
+
+        <!-- Thanh tiến độ đọc chương -->
+        <div class="w-full h-1.5 rounded-full overflow-hidden theme-elevated">
+          <div id="readingProgressBar" class="h-full rounded-full transition-all duration-300" style="width: 0%; background-color: var(--accent);"></div>
+        </div>
+
+        <!-- Thanh công cụ đọc sách: 3 giao diện màu nền, cỡ chữ, tự động cuộn & chuyển chương -->
+        <div class="pt-2.5 border-t theme-border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+          <!-- Hàng 1 trên mobile: 3 chế độ giao diện đọc & cỡ chữ -->
+          <div class="flex flex-wrap items-center justify-between sm:justify-start gap-2">
+            <div class="flex items-center gap-1">
+              <span class="theme-text-muted mr-0.5 hidden sm:inline">Giao diện:</span>
+              <button type="button" data-theme-choice="light" class="theme-choice-btn px-2.5 py-1.5 rounded-lg border font-medium transition">
+                Sáng
+              </button>
+              <button type="button" data-theme-choice="sepia" class="theme-choice-btn px-2.5 py-1.5 rounded-lg border font-medium transition">
+                Sepia
+              </button>
+              <button type="button" data-theme-choice="dark" class="theme-choice-btn px-2.5 py-1.5 rounded-lg border font-medium transition">
+                Tối
+              </button>
+            </div>
+
+            <div class="flex items-center gap-1">
+              <button type="button" data-font-preset="16" class="font-preset-btn hidden md:inline-block px-2 py-1 rounded-lg theme-elevated border font-medium hover:opacity-85" title="Cỡ chữ nhỏ">Nhỏ</button>
+              <button type="button" data-font-preset="19" class="font-preset-btn hidden md:inline-block px-2 py-1 rounded-lg theme-elevated border font-medium hover:opacity-85" title="Cỡ chữ vừa">Vừa</button>
+              <button type="button" data-font-preset="23" class="font-preset-btn hidden md:inline-block px-2 py-1 rounded-lg theme-elevated border font-medium hover:opacity-85" title="Cỡ chữ lớn">Lớn</button>
+              <button id="decreaseFontBtn" type="button" class="px-2.5 py-1.5 rounded-lg theme-elevated border font-bold active:scale-95" title="Giảm cỡ chữ">A-</button>
+              <span id="fontSizeIndicator" class="px-1 font-medium theme-text-muted min-w-[36px] text-center">19px</span>
+              <button id="increaseFontBtn" type="button" class="px-2.5 py-1.5 rounded-lg theme-elevated border font-bold active:scale-95" title="Tăng cỡ chữ">A+</button>
+            </div>
+          </div>
+
+          <!-- Hàng 2 trên mobile: Tùy chọn tự chuyển chương & tự cuộn -->
+          <div class="flex items-center justify-between sm:justify-end gap-4">
+            <label class="inline-flex items-center gap-2 py-0.5 cursor-pointer select-none">
+              <input id="autoNextChapterCheckbox" type="checkbox" checked class="w-4 h-4 rounded" style="accent-color: var(--accent);">
+              <span>Tự chuyển chương</span>
+            </label>
+
+            <label class="inline-flex items-center gap-2 py-0.5 cursor-pointer select-none">
+              <input id="autoScrollCheckbox" type="checkbox" checked class="w-4 h-4 rounded" style="accent-color: var(--accent);">
+              <span>Tự cuộn theo giọng</span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <!-- Thông báo trạng thái giọng đọc tiếng Việt -->
+      <div id="noVietnameseVoiceNotice" class="hidden theme-surface border rounded-2xl p-4 text-xs sm:text-sm flex items-start gap-3">
+        <span class="text-lg shrink-0">🎙️</span>
+        <div class="space-y-1">
+          <p class="font-semibold">Thiết bị chưa cài giọng Tiếng Việt cục bộ — Đã tự động kích hoạt giọng Online Cloud Tiếng Việt</p>
+          <p class="theme-text-secondary">
+            Bạn có thể nghe ngay bằng giọng <strong>[Online Cloud] Tiếng Việt Chuẩn</strong> hoặc mở trang bằng <strong>Microsoft Edge</strong> để dùng thêm giọng AI offline tự nhiên (Hoài My &amp; Nam Minh).
+          </p>
+        </div>
+      </div>
+
+      <!-- Khung hiển thị nội dung truyện tách đoạn <p class="story-paragraph"> -->
+      <article id="storyReaderContainer" class="theme-surface border rounded-2xl p-4 sm:p-9 story-reader-body" style="font-size: 19px;">
+        <!-- Các thẻ <p class="story-paragraph"> chứa <span class="sentence"> sẽ được render tại đây -->
+      </article>
+    </main>
+  </div>
+
+  <!-- =======================================================================
+       4. THANH ĐIỀU KHIỂN AUDIO CỐ ĐỊNH PHÍA DƯỚI MÀN HÌNH (TỐI ƯU MOBILE)
+       ======================================================================= -->
+  <footer id="audioPlayerFooter" class="fixed bottom-0 inset-x-0 z-40 backdrop-blur-xl theme-surface border-t px-3 sm:px-4 pt-2 sm:pt-2.5 pb-safe">
+    <div class="max-w-6xl mx-auto space-y-2">
+
+      <!-- Thanh hiển thị số chương, tên chương đang phát & tiến độ câu -->
+      <div class="flex items-center justify-between gap-2 text-[11px] sm:text-xs pb-1.5 border-b theme-border">
+        <button id="playerChapterInfoBtn" type="button" title="Chạm để mở danh sách chương" class="flex items-center gap-1.5 min-w-0 text-left hover:opacity-80 transition">
+          <span id="playerChapterNumberBadge" class="shrink-0 px-2 py-0.5 rounded-md font-bold" style="background-color: var(--accent-soft); color: var(--accent);">
+            Chương 1 / 2
+          </span>
+          <span id="playerChapterTitleText" class="font-medium theme-text-secondary truncate">
+            Chương 1: Tiếng chuông gió bên hiên nhà
+          </span>
+        </button>
+        <span id="playerSentenceProgressBadge" class="shrink-0 font-mono text-[11px] theme-text-muted">
+          Câu 0 / 0
+        </span>
+      </div>
+
+      <!-- Hàng 1: Điều khiển phát chính & nút mở rộng cài đặt giọng trên mobile -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-2">
+        <!-- Cụm nút phát: Chương trước / Câu trước / PLAY-PAUSE / Câu sau / Chương sau -->
+        <div class="flex items-center justify-between sm:justify-center gap-1.5 sm:gap-2 w-full md:w-auto">
+          <button id="prevChapterPlayerBtn" type="button" title="Chương trước" class="p-2.5 sm:p-2 rounded-xl theme-elevated border transition disabled:opacity-40 active:scale-95">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+            </svg>
+          </button>
+
+          <button id="prevSentenceBtn" type="button" title="Câu trước" class="p-2.5 sm:p-2 rounded-xl theme-elevated border transition active:scale-95">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+
+          <!-- Nút Play / Pause lớn ở trung tâm -->
+          <button id="playPauseBtn" type="button" class="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm shadow-md transition active:scale-95 min-w-[128px] sm:min-w-[140px]" style="background-color: var(--accent); color: var(--accent-contrast);">
+            <svg id="playIcon" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            <svg id="pauseIcon" class="w-4 h-4 sm:w-5 sm:h-5 shrink-0 hidden" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+            </svg>
+            <span id="playPauseText">Đọc truyện</span>
+          </button>
+
+          <button id="nextSentenceBtn" type="button" title="Câu tiếp theo" class="p-2.5 sm:p-2 rounded-xl theme-elevated border transition active:scale-95">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+
+          <button id="nextChapterPlayerBtn" type="button" title="Chương tiếp theo" class="p-2.5 sm:p-2 rounded-xl theme-elevated border transition disabled:opacity-40 active:scale-95">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Cụm tốc độ đọc, hẹn giờ tắt & nút mở bảng giọng đọc trên mobile -->
+        <div class="flex items-center justify-between md:justify-end gap-1.5 sm:gap-2 w-full md:w-auto">
+          <!-- Nút chạm nhanh đổi tốc độ trên mobile (chạm để chuyển vòng tốc độ phổ biến) -->
+          <button id="mobileQuickSpeedBtn" type="button" class="sm:hidden inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl theme-elevated border text-xs font-bold active:scale-95" title="Chạm để đổi nhanh tốc độ đọc">
+            <span class="theme-text-muted font-normal">Tốc độ:</span>
+            <span id="mobileSpeedBadge" style="color: var(--accent);">1.0x</span>
+          </button>
+
+          <!-- Thanh trượt & nút chọn nhanh tốc độ đọc (hiển thị từ màn hình sm trở lên) -->
+          <div class="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl theme-elevated border">
+            <span class="text-[11px] theme-text-muted">Tốc độ:</span>
+            <span id="speedValueLabel" class="text-xs font-bold min-w-[36px]" style="color: var(--accent);">1.0x</span>
+            <input id="speedRangeSlider" type="range" min="0.6" max="2.0" step="0.05" value="1.0" aria-label="Thanh trượt tốc độ đọc" class="speed-slider w-20">
+            <div class="hidden lg:flex items-center gap-1">
+              <button type="button" data-speed="0.6" class="speed-preset-btn px-1.5 py-0.5 rounded text-[11px] font-semibold border theme-border hover:opacity-80">0.6x</button>
+              <button type="button" data-speed="0.75" class="speed-preset-btn px-1.5 py-0.5 rounded text-[11px] font-semibold border theme-border hover:opacity-80">0.75x</button>
+              <button type="button" data-speed="1.0" class="speed-preset-btn px-1.5 py-0.5 rounded text-[11px] font-semibold border theme-border hover:opacity-80">1.0x</button>
+              <button type="button" data-speed="1.25" class="speed-preset-btn px-1.5 py-0.5 rounded text-[11px] font-semibold border theme-border hover:opacity-80">1.25x</button>
+              <button type="button" data-speed="1.5" class="speed-preset-btn px-1.5 py-0.5 rounded text-[11px] font-semibold border theme-border hover:opacity-80">1.5x</button>
+              <button type="button" data-speed="2.0" class="speed-preset-btn px-1.5 py-0.5 rounded text-[11px] font-semibold border theme-border hover:opacity-80">2.0x</button>
+            </div>
+          </div>
+
+          <!-- Hẹn giờ tắt (15p, 30p, 45p, 60p) -->
+          <div class="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl theme-elevated border">
+            <svg class="w-3.5 h-3.5 shrink-0" style="color: var(--accent);" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <select id="sleepTimerSelect" aria-label="Hẹn giờ tắt" class="bg-transparent text-xs font-medium focus:outline-none">
+              <option value="0">Hẹn giờ: Tắt</option>
+              <option value="15">15 phút</option>
+              <option value="30">30 phút</option>
+              <option value="45">45 phút</option>
+              <option value="60">60 phút</option>
+            </select>
+            <span id="sleepTimerCountdown" class="hidden text-[11px] font-mono font-bold px-1.5 py-0.5 rounded" style="background-color: var(--accent-soft); color: var(--accent);"></span>
+          </div>
+
+          <!-- Nút thu gọn / mở rộng bảng giọng đọc & tinh chỉnh trên điện thoại -->
+          <button id="toggleVoicePanelBtn" type="button" aria-expanded="false" class="sm:hidden inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl theme-elevated border text-xs font-semibold active:scale-95">
+            <span>🎙️ Giọng đọc</span>
+            <span id="toggleVoicePanelArrow">▴</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Hàng 2: Hệ thống giọng đọc Tiếng Việt đa nguồn, Nghe thử, Sắc thái & Cao độ (Thu gọn mặc định trên mobile) -->
+      <div id="voiceControlsRow" class="hidden sm:flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-between gap-2 pt-2 border-t theme-border max-h-[48vh] overflow-y-auto sm:max-h-none sm:overflow-visible">
+        <!-- Cụm chọn giọng đọc + Nghe thử + Mẹo giọng AI + Lọc đa ngôn ngữ -->
+        <div class="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 flex-1 min-w-0">
+          <div class="flex items-center gap-1.5 px-2.5 py-2 sm:py-1.5 rounded-xl theme-elevated border flex-1 min-w-0 sm:max-w-[340px]">
+            <svg class="w-4 h-4 shrink-0" style="color: var(--accent);" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+            </svg>
+            <select id="voiceSelect" aria-label="Chọn giọng đọc tiếng Việt" class="bg-transparent text-xs font-semibold w-full focus:outline-none truncate">
+              <option value="cloud:vi-female">[Online Cloud] Giọng Nữ Google Tiếng Việt</option>
+            </select>
+          </div>
+
+          <div class="grid grid-cols-2 sm:flex items-center gap-2">
+            <!-- Nút Nghe thử giọng ngay lập tức -->
+            <button id="testVoiceBtn" type="button" class="inline-flex items-center justify-center gap-1 px-2.5 py-2 sm:py-1.5 rounded-xl theme-elevated border text-xs font-semibold transition active:scale-95" title="Đọc thử một câu tiếng Việt mẫu mà không mất vị trí đang đọc">
+              <span>🔊</span>
+              <span id="testVoiceBtnText">Nghe thử</span>
+            </button>
+
+            <!-- Nút Mẹo mở thêm giọng AI -->
+            <button id="voiceTipsBtn" type="button" class="inline-flex items-center justify-center gap-1 px-2.5 py-2 sm:py-1.5 rounded-xl theme-elevated border text-xs font-medium transition active:scale-95" title="Hướng dẫn mở thêm giọng đọc AI tiếng Việt miễn phí">
+              <span>💡</span>
+              <span>Mẹo giọng AI</span>
+            </button>
+          </div>
+
+          <!-- Thanh chỉnh tốc độ chi tiết dành riêng cho mobile khi mở bảng -->
+          <div class="flex sm:hidden items-center justify-between gap-2 px-3 py-2 rounded-xl theme-elevated border">
+            <span class="text-xs theme-text-muted shrink-0">Tốc độ đọc:</span>
+            <input id="mobileSpeedRangeSlider" type="range" min="0.6" max="2.0" step="0.05" value="1.0" aria-label="Thanh trượt tốc độ đọc trên điện thoại" class="speed-slider flex-1">
+            <span id="mobileSpeedSliderValue" class="text-xs font-bold min-w-[38px] text-right" style="color: var(--accent);">1.0x</span>
+          </div>
+
+          <!-- Checkbox hiển thị thêm giọng đa ngôn ngữ khác -->
+          <label class="inline-flex items-center gap-2 text-xs theme-text-secondary cursor-pointer select-none py-0.5">
+            <input id="showAllLanguagesCheckbox" type="checkbox" class="w-4 h-4 rounded" style="accent-color: var(--accent);">
+            <span>Hiển thị thêm giọng đa ngôn ngữ khác</span>
+          </label>
+        </div>
+
+        <!-- Cụm Sắc thái giọng (Voice Presets) & Thanh chỉnh Cao độ (Pitch 0.7 - 1.3) -->
+        <div class="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
+          <div class="flex items-center justify-between gap-1.5 px-2.5 py-2 sm:py-1.5 rounded-xl theme-elevated border">
+            <span class="text-xs theme-text-muted shrink-0">Sắc thái:</span>
+            <select id="voicePresetSelect" aria-label="Sắc thái / Âm sắc giọng" class="bg-transparent text-xs font-semibold focus:outline-none truncate max-w-[210px]">
+              <option value="1.0">Chuẩn tự nhiên (Pitch 1.0)</option>
+              <option value="0.94">Nữ kể chuyện ấm áp (Pitch 0.94)</option>
+              <option value="1.12">Nữ thanh thoát nhẹ nhàng (Pitch 1.12)</option>
+              <option value="0.80">Nam trầm kể chuyện đêm khuya (Pitch 0.80)</option>
+              <option value="0.88">Nam hào sảng kiếm hiệp / tiên hiệp (Pitch 0.88)</option>
+              <option value="custom" disabled hidden>Tùy chỉnh cao độ</option>
+            </select>
+          </div>
+
+          <div class="flex items-center justify-between gap-2 px-2.5 py-2 sm:py-1.5 rounded-xl theme-elevated border">
+            <span class="text-xs theme-text-muted shrink-0">Cao độ:</span>
+            <input id="pitchRangeSlider" type="range" min="0.7" max="1.3" step="0.02" value="1.0" aria-label="Thanh chỉnh cao độ giọng đọc" class="speed-slider flex-1 sm:w-20">
+            <span id="pitchValueLabel" class="text-xs font-bold min-w-[34px] text-right" style="color: var(--accent);">1.00</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </footer>
+
+  <!-- =======================================================================
+       5. MODAL HƯỚNG DẪN DATA HOSTING, NẠP TRUYỆN & MẸO GIỌNG AI
+       ======================================================================= -->
+  <div id="helpModal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="theme-surface border rounded-t-3xl sm:rounded-2xl max-w-2xl w-full max-h-[90dvh] sm:max-h-[88vh] flex flex-col overflow-hidden pb-safe">
+      <div class="px-4 sm:px-6 py-3.5 sm:py-4 border-b theme-border flex items-center justify-between">
+        <h3 class="text-base sm:text-lg font-bold">Hướng dẫn tổ chức thư mục data/ trên Hosting</h3>
+        <button id="closeHelpModalBtn" type="button" class="p-2 rounded-xl theme-elevated hover:opacity-80">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="p-4 sm:p-6 overflow-y-auto mobile-scroll-contain space-y-5 text-xs sm:text-sm leading-relaxed">
+        <div class="space-y-2">
+          <h4 class="font-bold text-sm" style="color: var(--accent);">1. Cấu trúc dữ liệu trên Hosting</h4>
+          <p class="theme-text-secondary">
+            Tạo thư mục <code>data/</code> và lưu trữ toàn bộ nội dung truyện trong một tệp <code>stories.json</code> duy nhất để tải siêu tốc:
+          </p>
+          <pre class="p-3.5 rounded-xl theme-elevated border font-mono text-xs overflow-x-auto leading-relaxed">public_html/
+├── index.html
+└── data/
+    └── stories.json</pre>
+          <p class="theme-text-secondary">
+            Định dạng của tệp <code>stories.json</code>:
+          </p>
+          <pre class="p-3.5 rounded-xl theme-elevated border font-mono text-[10px] sm:text-xs overflow-x-auto leading-relaxed">[
+  {
+    "title": "Tên Bộ Truyện",
+    "chapters": [
+      {
+        "title": "Chương 1",
+        "content": "Nội dung chương 1..."
+      }
+    ]
+  }
+]</pre>
+        </div>
+
+        <div class="space-y-2">
+          <h4 class="font-bold text-sm" style="color: var(--accent);">2. Phím tắt &amp; Thao tác nhanh</h4>
+          <ul class="list-disc pl-5 space-y-1 theme-text-secondary">
+            <li>Nhấn phím <strong>Space (Dấu cách)</strong> để Phát / Tạm dừng đọc truyện.</li>
+            <li>Nhấn phím <strong>B</strong> hoặc bấm nút <strong>Đánh dấu</strong> để lưu nhanh chương yêu thích cùng vị trí câu đang nghe.</li>
+            <li>Nhấn phím <strong>M</strong> để mở nhanh hộp thoại quản lý <strong>Mục đánh dấu chương</strong>.</li>
+            <li>Chạm trực tiếp vào <strong>bất kỳ câu văn nào</strong> trên màn hình để nhảy tới và nghe ngay từ câu đó.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Nạp thêm truyện ([Tên truyện]/Chuong_1.txt... hoặc Dán văn bản) -->
+  <div id="quickAddStoryModal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="theme-surface border rounded-t-3xl sm:rounded-2xl max-w-2xl w-full max-h-[92dvh] sm:max-h-[90vh] flex flex-col overflow-hidden pb-safe">
+      <div class="px-4 sm:px-6 py-3.5 sm:py-4 border-b theme-border flex items-center justify-between">
+        <h3 class="text-base sm:text-lg font-bold">Nạp thêm truyện vào thư viện</h3>
+        <button id="closeQuickAddModalBtn" type="button" class="p-2 rounded-xl theme-elevated hover:opacity-80">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="p-4 sm:p-6 overflow-y-auto mobile-scroll-contain space-y-4 text-xs sm:text-sm">
+        <!-- Khu vực 1: Nạp trực tiếp từ thư mục [Tên truyện]/ hoặc nhiều tệp Chuong_1.txt, Chuong_2.txt -->
+        <div class="p-4 rounded-2xl theme-elevated border space-y-3">
+          <div class="space-y-1">
+            <h4 class="font-bold text-sm" style="color: var(--accent);">Cách 1: Nạp tệp [Tên truyện] / Chuong_1.txt, Chuong_2.txt...</h4>
+            <p class="text-xs theme-text-secondary leading-relaxed">
+              Chọn cả thư mục truyện hoặc chọn nhiều tệp chương cùng lúc (tương thích đầy đủ trên điện thoại iPhone/Android và máy tính).
+            </p>
+          </div>
+
+          <div class="space-y-1.5">
+            <label for="quickBatchStoryTitleInput" class="block text-xs font-semibold">Tên bộ truyện (tự động lấy theo tên thư mục nếu chọn thư mục)</label>
+            <input id="quickBatchStoryTitleInput" type="text" placeholder="Ví dụ: Kiếm Lai (để trống nếu chọn cả thư mục)" class="w-full px-3.5 py-2.5 rounded-xl theme-surface border focus:outline-none">
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <label class="flex items-center justify-center gap-2 min-h-[44px] px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm cursor-pointer shadow-sm transition active:scale-95 text-center" style="background-color: var(--accent); color: var(--accent-contrast);">
+              <span>📁 Chọn thư mục [Tên truyện]/</span>
+              <input id="quickFolderUploadInput" type="file" webkitdirectory directory multiple accept=".txt,.pdf,.md,.json" class="hidden">
+            </label>
+
+            <label class="flex items-center justify-center gap-2 min-h-[44px] px-4 py-2.5 rounded-xl theme-surface border font-bold text-xs sm:text-sm cursor-pointer transition active:scale-95 text-center">
+              <span>📄 Chọn nhiều tệp Chuong_*.txt</span>
+              <input id="quickMultiFilesInput" type="file" multiple accept=".txt,.pdf,.md,.json" class="hidden">
+            </label>
+          </div>
+        </div>
+
+        <!-- Khu vực 2: Dán nội dung văn bản nhanh -->
+        <form id="quickAddStoryForm" class="p-4 rounded-2xl theme-elevated border space-y-3.5">
+          <h4 class="font-bold text-sm" style="color: var(--accent);">Cách 2: Dán nội dung văn bản trực tiếp</h4>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <label class="flex items-center gap-2 p-2.5 rounded-xl theme-surface border cursor-pointer">
+              <input type="radio" name="quickAddMode" value="new_story" checked style="accent-color: var(--accent);">
+              <span class="font-semibold text-xs">Tạo bộ truyện mới</span>
+            </label>
+            <label class="flex items-center gap-2 p-2.5 rounded-xl theme-surface border cursor-pointer">
+              <input type="radio" name="quickAddMode" value="append_chapter" style="accent-color: var(--accent);">
+              <span class="font-semibold text-xs">Thêm vào truyện đang có</span>
+            </label>
+          </div>
+
+          <div id="newStoryTitleGroup" class="space-y-1">
+            <label for="quickStoryTitleInput" class="block text-xs font-semibold">Tên bộ truyện</label>
+            <input id="quickStoryTitleInput" type="text" placeholder="Ví dụ: Ký Ức Mùa Hạ" class="w-full px-3.5 py-2.5 rounded-xl theme-surface border focus:outline-none">
+          </div>
+
+          <div id="existingStorySelectGroup" class="hidden space-y-1">
+            <label for="quickExistingStorySelect" class="block text-xs font-semibold">Chọn bộ truyện muốn thêm chương</label>
+            <select id="quickExistingStorySelect" class="w-full px-3.5 py-2.5 rounded-xl theme-surface border focus:outline-none"></select>
+          </div>
+
+          <div class="space-y-1">
+            <label for="quickChapterTitleInput" class="block text-xs font-semibold">Tên chương</label>
+            <input id="quickChapterTitleInput" type="text" placeholder="Ví dụ: Chương 1: Chuyến tàu chiều" class="w-full px-3.5 py-2.5 rounded-xl theme-surface border focus:outline-none">
+          </div>
+
+          <div class="space-y-1">
+            <label for="quickChapterContentInput" class="block text-xs font-semibold">Nội dung truyện (Tự động giữ xuống dòng &amp; tách chương)</label>
+            <textarea id="quickChapterContentInput" rows="5" placeholder="Dán nội dung truyện vào đây..." class="w-full px-3.5 py-2.5 rounded-xl theme-surface border leading-relaxed focus:outline-none"></textarea>
+          </div>
+
+          <div class="pt-1 flex items-center justify-end gap-2">
+            <button id="exportJsonBtn" type="button" class="px-4 py-2.5 rounded-xl theme-elevated border font-semibold hover:opacity-85" style="color: var(--accent);" title="Tải file stories.json chứa toàn bộ truyện">Xuất stories.json</button>
+            <button id="cancelQuickAddBtn" type="button" class="px-4 py-2.5 rounded-xl theme-surface border font-semibold hover:opacity-85">Đóng</button>
+            <button type="submit" class="px-5 py-2.5 rounded-xl font-bold shadow-sm transition active:scale-95" style="background-color: var(--accent); color: var(--accent-contrast);">
+              Thêm vào danh sách
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Mẹo mở thêm giọng đọc AI Tiếng Việt miễn phí -->
+  <div id="voiceTipsModal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="theme-surface border rounded-t-3xl sm:rounded-2xl max-w-xl w-full max-h-[90dvh] flex flex-col overflow-hidden pb-safe">
+      <div class="px-4 sm:px-6 py-3.5 sm:py-4 border-b theme-border flex items-center justify-between">
+        <h3 class="text-base sm:text-lg font-bold">Mẹo mở thêm giọng đọc AI Tiếng Việt</h3>
+        <button id="closeVoiceTipsModalBtn" type="button" class="p-2 rounded-xl theme-elevated hover:opacity-80">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="p-4 sm:p-6 overflow-y-auto space-y-4 text-xs sm:text-sm leading-relaxed">
+        <div class="p-3.5 rounded-xl border theme-border space-y-1" style="background-color: var(--accent-soft);">
+          <p class="font-bold" style="color: var(--accent);">1. Trên Windows (Khuyên dùng Microsoft Edge)</p>
+          <p class="theme-text-secondary">
+            Mở trang bằng trình duyệt <strong>Microsoft Edge</strong> để sử dụng ngay 2 giọng AI đọc truyện tự nhiên: <strong>Microsoft HoaiMy Online (Natural)</strong> (Nữ) và <strong>Microsoft NamMinh Online (Natural)</strong> (Nam).
+          </p>
+        </div>
+        <div class="space-y-1">
+          <p class="font-bold">2. Trên điện thoại Android / iPhone</p>
+          <p class="theme-text-secondary">
+            Chọn giọng <strong>[Online Cloud] Giọng Nữ Tiếng Việt Chuẩn</strong> ở danh sách giọng đọc, hoặc bật gói giọng Tiếng Việt trong phần <em>Cài đặt &rarr; Trợ năng &rarr; Chuyển văn bản thành giọng nói</em> của điện thoại.
+          </p>
+        </div>
+        <div class="space-y-1">
+          <p class="font-bold">3. Trên macOS / iPadOS</p>
+          <p class="theme-text-secondary">
+            Vào <strong>System Settings &rarr; Accessibility &rarr; Spoken Content &rarr; System Voice</strong>, tìm và tải xuống giọng tiếng Việt (<strong>Linh</strong>).
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Quản lý Mục đánh dấu chương -->
+  <div id="bookmarksModal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="theme-surface border rounded-t-3xl sm:rounded-2xl max-w-2xl w-full max-h-[90dvh] sm:max-h-[86vh] flex flex-col overflow-hidden pb-safe">
+      <div class="px-4 sm:px-6 py-3.5 sm:py-4 border-b theme-border flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <h3 class="text-base sm:text-lg font-bold">Mục đánh dấu chương</h3>
+          <p id="bookmarksModalSubtitle" class="text-xs theme-text-muted mt-0.5 truncate">Tổng cộng 0 chương đã đánh dấu</p>
+        </div>
+        <button id="closeBookmarksModalBtn" type="button" class="p-2 rounded-xl theme-elevated hover:opacity-80 shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="px-4 sm:px-6 py-2.5 border-b theme-border flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div class="flex items-center gap-1.5">
+          <button id="bookmarkScopeAllBtn" type="button" class="px-3 py-1.5 rounded-lg border font-semibold transition">
+            Tất cả bộ truyện
+          </button>
+          <button id="bookmarkScopeCurrentBtn" type="button" class="px-3 py-1.5 rounded-lg border font-semibold transition">
+            Truyện đang mở
+          </button>
+        </div>
+
+        <button id="clearAllBookmarksBtn" type="button" class="px-3 py-1.5 rounded-lg theme-elevated border font-semibold text-red-600 dark:text-red-400 transition hover:opacity-85">
+          Xóa tất cả đánh dấu
+        </button>
+      </div>
+
+      <!-- Danh sách chương đã đánh dấu -->
+      <div id="bookmarksModalList" class="p-4 sm:p-6 overflow-y-auto space-y-2.5 flex-1"></div>
+    </div>
+  </div>
+
+  <!-- Khung thông báo nhanh (Toast) -->
+    <div id="toastContainer" class="fixed top-16 sm:top-20 inset-x-3 sm:inset-x-auto sm:right-4 z-50 flex flex-col items-center sm:items-end gap-2 pointer-events-none"></div>
+
+  <script>
+    // 1. Cấu hình Worker cho PDF.js
+    if (window.pdfjsLib) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+
+    // 2. Định nghĩa dom tự động bằng Proxy (Khắc phục vĩnh viễn lỗi 'dom is not defined')
+    const dom = new Proxy({}, {
+      get: function(target, name) {
+        if (!(name in target)) {
+          target[name] = document.getElementById(name);
+        }
+        return target[name];
+      }
+    });
+
+    // 3. Khai báo State
+    const state = {
+      isLocked: true,
+      stories: [],
+      currentStoryIndex: -1,
+      currentChapterIndex: -1,
+      sentences: [],
+      currentSentenceIndex: -1,
+      isPlaying: false,
+      playbackSessionId: 0,
+      rate: 1.0, 
+      pitch: 1.0,
+      voiceId: 'cloud:vi-female',
+      voices: [],
+      theme: 'sepia', 
+      fontSize: 19,
+      autoNext: true, 
+      autoScroll: true,
+      bookmarks: [],
+      cloudAudio: new Audio()
+    };
+
+    function showToast(msg) {
+      const toast = document.createElement('div');
+      toast.className = 'px-4 py-2 rounded-xl text-sm font-semibold shadow-lg transition-all duration-300 transform translate-y-4 opacity-0';
+      toast.style.backgroundColor = 'var(--bg-elevated)';
+      toast.style.color = 'var(--text-primary)';
+      toast.style.border = '1px solid var(--border-color)';
+      toast.textContent = msg;
+      dom.toastContainer.appendChild(toast);
+      
+      // Animate in
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-4', 'opacity-0');
+      });
+      
+      // Animate out and remove
+      setTimeout(() => {
+        toast.classList.add('translate-y-4', 'opacity-0');
+        setTimeout(() => toast.remove(), 300);
+      }, 2500);
+    }
+
+    // 4. Màn hình khóa (Key Password: Mothaiba@123)
+    function initAuth() {
+      const unlocked = localStorage.getItem('audio_truyen_auth_v1');
+      if (unlocked === 'Mothaiba@123') {
+        unlockApp();
+      } else {
+        dom.authSubmitBtn.onclick = (e) => {
+          e.preventDefault();
+          if (dom.authKeyInput.value === 'Mothaiba@123') {
+            if (dom.authRememberCheckbox.checked) {
+              localStorage.setItem('audio_truyen_auth_v1', 'Mothaiba@123');
+            }
+            unlockApp();
+          } else {
+            dom.authGateCard.classList.remove('gate-shake');
+            void dom.authGateCard.offsetWidth; // Trigger reflow
+            dom.authGateCard.classList.add('gate-shake');
+            dom.authErrorMsg.classList.remove('hidden');
+          }
+        };
+        dom.toggleAuthKeyVisibilityBtn.onclick = () => {
+          const type = dom.authKeyInput.type === 'password' ? 'text' : 'password';
+          dom.authKeyInput.type = type;
+          dom.authEyeOpenIcon.classList.toggle('hidden');
+          dom.authEyeClosedIcon.classList.toggle('hidden');
+        };
+      }
+    }
+
+    function unlockApp() {
+      dom.authGateOverlay.style.opacity = '0';
+      setTimeout(() => dom.authGateOverlay.style.display = 'none', 500);
+      bootApp();
+    }
+
+    // 5. Khởi tạo Ứng dụng
+    async function bootApp() {
+      loadSettings();
+      applySettings();
+      setupEvents();
+      await loadVoices();
+      await loadLibraryData();
+    }
+
+    function loadSettings() {
+      try {
+        const d = JSON.parse(localStorage.getItem('audio_truyen_settings_v3'));
+        if (d) {
+          if (d.theme) state.theme = d.theme;
+          if (d.fontSize) state.fontSize = d.fontSize;
+          if (d.voiceId) state.voiceId = d.voiceId;
+          if (d.rate) state.rate = d.rate;
+          if (d.pitch) state.pitch = d.pitch;
+          if (d.bookmarks) state.bookmarks = d.bookmarks;
+        }
+      } catch(e) {}
+    }
+
+    function saveSettings() {
+      localStorage.setItem('audio_truyen_settings_v3', JSON.stringify({
+        theme: state.theme, fontSize: state.fontSize,
+        voiceId: state.voiceId, rate: state.rate, pitch: state.pitch,
+        bookmarks: state.bookmarks
+      }));
+    }
+
+    function applySettings() {
+      document.body.setAttribute('data-theme', state.theme);
+      dom.storyReaderContainer.style.fontSize = state.fontSize + 'px';
+      if (dom.fontSizeIndicator) dom.fontSizeIndicator.textContent = state.fontSize + 'px';
+      
+      dom.speedRangeSlider.value = state.rate;
+      if (dom.speedValueLabel) dom.speedValueLabel.textContent = state.rate.toFixed(2) + 'x';
+      if (dom.mobileSpeedSliderValue) dom.mobileSpeedSliderValue.textContent = state.rate.toFixed(2) + 'x';
+      if (dom.mobileSpeedBadge) dom.mobileSpeedBadge.textContent = state.rate.toFixed(2) + 'x';
+      
+      if (dom.pitchRangeSlider) {
+        dom.pitchRangeSlider.value = state.pitch;
+        dom.pitchValueLabel.textContent = state.pitch.toFixed(2);
+      }
+      
+      if (dom.autoNextChapterCheckbox) dom.autoNextChapterCheckbox.checked = state.autoNext;
+      if (dom.autoScrollCheckbox) dom.autoScrollCheckbox.checked = state.autoScroll;
+    }
+
+    // 6. Quản lý Giọng đọc (TTS Engine)
+    async function loadVoices() {
+      return new Promise(resolve => {
+        let loaded = false;
+        const check = () => {
+          const v = speechSynthesis.getVoices();
+          if (v.length > 0) {
+            state.voices = v;
+            renderVoiceList();
+            loaded = true;
+            resolve();
+          }
+        };
+        check();
+        if (!loaded) speechSynthesis.onvoiceschanged = check;
+        setTimeout(() => { if(!loaded){ renderVoiceList(); resolve(); } }, 1000);
+      });
+    }
+
+    function renderVoiceList() {
+      if (!dom.voiceSelect) return;
+      dom.voiceSelect.innerHTML = `<option value="cloud:vi-female">[Online Cloud] Giọng Nữ Google Tiếng Việt</option>`;
+      state.voices.forEach(v => {
+        if (v.lang.includes('vi') || state.showAllLanguages) {
+          let label = v.name;
+          if (v.name.includes('HoaiMy')) label = '[AI Tự nhiên] Microsoft HoaiMy (Nữ)';
+          else if (v.name.includes('NamMinh')) label = '[AI Tự nhiên] Microsoft NamMinh (Nam)';
+          else if (v.name.toLowerCase().includes('google')) label = `[Google] ${v.name}`;
+          const opt = document.createElement('option');
+          opt.value = 'synth:' + v.name;
+          opt.textContent = label;
+          dom.voiceSelect.appendChild(opt);
+        }
+      });
+      if ([...dom.voiceSelect.options].some(o => o.value === state.voiceId)) {
+        dom.voiceSelect.value = state.voiceId;
+      } else {
+        dom.voiceSelect.value = 'cloud:vi-female';
+        state.voiceId = 'cloud:vi-female';
+      }
+    }
+
+    function splitSentence(text, max = 180) {
+      const result = [];
+      const parts = text.split(/([.,!?;\n]+)/);
+      let curr = '';
+      for (let p of parts) {
+        if ((curr + p).length > max && curr.trim().length > 0) {
+          result.push(curr.trim());
+          curr = p;
+        } else {
+          curr += p;
+        }
+      }
+      if (curr.trim()) result.push(curr.trim());
+      return result;
+    }
+
+    async function speakText(text, sessionId) {
+      if (state.voiceId === 'cloud:vi-female') {
+        const chunks = splitSentence(text, 180);
+        for (let chunk of chunks) {
+          if (sessionId !== state.playbackSessionId) return 'cancelled';
+          try {
+            await new Promise((res, rej) => {
+              const audio = state.cloudAudio;
+              audio.src = `https://translate.googleapis.com/translate_tts?ie=UTF-8&client=tw-ob&tl=vi&q=${encodeURIComponent(chunk)}`;
+              audio.playbackRate = state.rate;
+              audio.onended = () => res();
+              audio.onerror = () => rej(new Error('Cloud TTS failed'));
+              audio.play().catch(rej);
+            });
+          } catch(e) {
+            return await synthFallback(text, sessionId);
+          }
+        }
+        return 'ended';
+      } else {
+        return await synthFallback(text, sessionId);
+      }
+    }
+
+    function synthFallback(text, sessionId) {
+      return new Promise((res) => {
+        if (sessionId !== state.playbackSessionId) return res('cancelled');
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.rate = state.rate; 
+        u.pitch = state.pitch;
+        const vId = state.voiceId.replace('synth:', '');
+        const voice = state.voices.find(v => v.name === vId) || state.voices.find(v => v.lang.includes('vi'));
+        if (voice) u.voice = voice;
+        u.onend = () => res('ended');
+        u.onerror = () => res('cancelled');
+        speechSynthesis.speak(u);
+        if (speechSynthesis.paused) speechSynthesis.resume();
+      });
+    }
+
+    // --- CÁC HÀM ĐÓNG / MỞ NGĂN KÉO MỤC LỤC TRÊN MOBILE ---
+    function openMobileSidebar() {
+      if (dom.chapterSidebar) {
+        dom.chapterSidebar.classList.remove('hidden');
+        dom.chapterSidebar.classList.add('flex');
+      }
+      if (dom.mobileSidebarBackdrop) dom.mobileSidebarBackdrop.classList.remove('hidden');
+    }
+
+    function closeMobileSidebar() {
+      if (dom.chapterSidebar) {
+        dom.chapterSidebar.classList.add('hidden');
+        dom.chapterSidebar.classList.remove('flex');
+      }
+      if (dom.mobileSidebarBackdrop) dom.mobileSidebarBackdrop.classList.add('hidden');
+    }
+
+    // 7. Logic Đọc / Phát Truyện
+    async function playSentence() {
+      if (!state.isPlaying) return;
+      const sId = state.playbackSessionId;
+      const text = state.sentences[state.currentSentenceIndex];
+      if (!text) {
+        if (state.autoNext) nextChapter();
+        else pause();
+        return;
+      }
+      
+      highlightSentence(state.currentSentenceIndex);
+      const res = await speakText(text, sId);
+      
+      if (res === 'ended' && state.isPlaying && sId === state.playbackSessionId) {
+        state.currentSentenceIndex++;
+        playSentence();
+      }
+    }
+
+    function play() {
+      if (state.sentences.length === 0) return;
+      state.isPlaying = true;
+      state.playbackSessionId++;
+      dom.playIcon.classList.add('hidden');
+      dom.pauseIcon.classList.remove('hidden');
+      dom.playPauseText.textContent = 'Tạm dừng';
+      playSentence();
+    }
+    
+    function pause() {
+      state.isPlaying = false;
+      state.playbackSessionId++;
+      speechSynthesis.cancel();
+      state.cloudAudio.pause();
+      dom.playIcon.classList.remove('hidden');
+      dom.pauseIcon.classList.add('hidden');
+      dom.playPauseText.textContent = 'Đọc truyện';
+    }
+    
+    function togglePlay() { state.isPlaying ? pause() : play(); }
+
+    function highlightSentence(idx) {
+      document.querySelectorAll('.sentence').forEach(el => el.classList.remove('sentence-active'));
+      const el = document.getElementById(`sen-${idx}`);
+      if (el) {
+        el.classList.add('sentence-active');
+        if (state.autoScroll) el.scrollIntoView({behavior: 'smooth', block: 'center'});
+      }
+      dom.playerSentenceProgressBadge.textContent = `Câu ${idx+1} / ${state.sentences.length}`;
+      dom.sentenceProgressText.textContent = `• Câu ${idx+1} / ${state.sentences.length}`;
+      dom.readingProgressBar.style.width = `${((idx+1)/state.sentences.length)*100}%`;
+    }
+
+    function jumpTo(idx) {
+      state.currentSentenceIndex = idx;
+      if (state.isPlaying) {
+        state.playbackSessionId++;
+        playSentence();
+      } else {
+        highlightSentence(idx);
+      }
+    }
+
+    // 8. Tải và Xử lý Nội dung Truyện
+    function loadStory(sIdx, cIdx = 0) {
+      state.currentStoryIndex = sIdx;
+      state.currentChapterIndex = cIdx;
+      
+      // Lưu tiến độ đọc
+      if (state.stories[sIdx]) {
+        try {
+          localStorage.setItem('audio_truyen_progress', JSON.stringify({
+            storyTitle: state.stories[sIdx].title,
+            chapterTitle: state.stories[sIdx].chapters[cIdx] ? state.stories[sIdx].chapters[cIdx].title : null
+          }));
+        } catch(e) {}
+      }
+
+      renderChapter();
+      renderSidebar();
+      if (state.isPlaying) play();
+
+      // Tự động đóng mục lục trên mobile khi đã chọn xong chương
+      if (window.innerWidth < 1024) {
+        closeMobileSidebar();
+      }
+    }
+
+    function renderChapter() {
+      const story = state.stories[state.currentStoryIndex];
+      if (!story) return;
+      const chapter = story.chapters[state.currentChapterIndex];
+      if (!chapter) return;
+
+      dom.storyTitleBadge.textContent = story.title;
+      dom.chapterBadge.textContent = `Chương ${state.currentChapterIndex + 1} / ${story.chapters.length}`;
+      dom.chapterTitleHeading.textContent = chapter.title;
+      dom.playerChapterNumberBadge.textContent = `Chương ${state.currentChapterIndex + 1} / ${story.chapters.length}`;
+      dom.playerChapterTitleText.textContent = chapter.title;
+
+      const rawParas = chapter.content.split('\n').filter(p => p.trim().length > 0);
+      let sentenceCounter = 0;
+      state.sentences = [];
+      let html = '';
+
+      rawParas.forEach(p => {
+        const sens = p.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 0);
+        if (sens.length === 0) return;
+        html += `<p class="story-paragraph">`;
+        sens.forEach(s => {
+          state.sentences.push(s.trim());
+          html += `<span class="sentence" id="sen-${sentenceCounter}" onclick="jumpTo(${sentenceCounter})">${s.trim()} </span>`;
+          sentenceCounter++;
+        });
+        html += `</p>`;
+      });
+
+      dom.storyReaderContainer.innerHTML = html;
+      state.currentSentenceIndex = 0;
+      highlightSentence(0);
+    }
+
+    function nextChapter() {
+      const story = state.stories[state.currentStoryIndex];
+      if (state.currentChapterIndex < story.chapters.length - 1) {
+        state.currentChapterIndex++;
+        renderChapter();
+        if (state.isPlaying) play();
+      } else {
+        pause();
+      }
+    }
+    
+    function prevChapter() {
+      if (state.currentChapterIndex > 0) {
+        state.currentChapterIndex--;
+        renderChapter();
+        if (state.isPlaying) play();
+      }
+    }
+
+    function renderSidebar() {
+      dom.storySelect.innerHTML = state.stories.map((s, i) => `<option value="${i}">${s.title}</option>`).join('');
+      dom.storySelect.value = state.currentStoryIndex;
+
+      const story = state.stories[state.currentStoryIndex];
+      dom.sidebarStatsText.textContent = `${story.chapters.length} chương sẵn sàng`;
+
+      let html = '';
+      story.chapters.forEach((c, i) => {
+        const isSel = i === state.currentChapterIndex;
+        html += `<button onclick="loadStory(${state.currentStoryIndex}, ${i})" class="w-full text-left px-3 py-2.5 rounded-xl border text-sm transition ${isSel ? 'border-[var(--accent)] font-bold' : 'border-transparent hover:bg-[var(--bg-hover)]'}">${c.title}</button>`;
+      });
+      dom.chapterListContainer.innerHTML = html;
+      dom.mobileChapterCount.textContent = story.chapters.length;
+    }
+
+    async function loadLibraryData() {
+      try {
+        dom.dataSourceSubtitle.textContent = 'Đang tải data/stories.json...';
+        const response = await fetch('data/stories.json', { cache: 'no-store' });
+        if (!response.ok) throw new Error('Không tìm thấy file stories.json');
+        const data = await response.json();
+        
+        if (Array.isArray(data) && data.length > 0) {
+          state.stories = data;
+          dom.dataSourceSubtitle.textContent = `Đã tải ${state.stories.length} bộ truyện`;
+        } else {
+          throw new Error('Định dạng file không đúng');
+        }
+      } catch (error) {
+        console.warn('Lỗi tải data/stories.json:', error);
+        dom.dataSourceSubtitle.textContent = 'Dùng dữ liệu mẫu (Không tìm thấy stories.json)';
+        // Dữ liệu mẫu ban đầu để sử dụng ngay nếu không có file JSON
+        state.stories = [
+          {
+            title: 'Truyện Mẫu: Khu Vườn Ánh Trăng',
+            chapters: [
+              {
+                title: 'Chương 1: Tiếng chuông gió bên hiên nhà',
+                content: 'Đêm cuối thu, làn sương mỏng nhẹ nhàng phủ xuống con ngõ nhỏ dẫn vào khu vườn cổ sau lưng đồi.\nTrên hiên gỗ cũ kỹ, chiếc chuông gió bằng đồng khẽ ngân lên những thanh âm trong trẻo mỗi khi có làn gió thu lướt qua.\nMinh ngồi bên bàn trà ấm, lật mở từng trang cuốn sổ tay bìa da mà ông nội để lại trước chuyến đi xa.'
+              },
+              {
+                title: 'Chương 2: Ánh sáng dưới tán long não',
+                content: 'Nửa đêm, ánh trăng rằm vằng vặc soi sáng khoảng sân rải sỏi trắng xóa như mặt hồ tĩnh lặng.\nTừ gốc cây long não già, những đốm sáng nhỏ li ti bỗng bay lên, lượn vòng quanh như những chiếc đèn lồng tí hon.'
+              }
+            ]
+          }
+        ];
+      }
+      
+      // Khôi phục trạng thái đọc nếu có
+      let sIdx = 0, cIdx = 0;
+      try {
+        const saved = JSON.parse(localStorage.getItem('audio_truyen_progress'));
+        if (saved && saved.storyTitle) {
+          const foundS = state.stories.findIndex(s => s.title === saved.storyTitle);
+          if (foundS !== -1) {
+            sIdx = foundS;
+            if (saved.chapterTitle) {
+              const foundC = state.stories[sIdx].chapters.findIndex(c => c.title === saved.chapterTitle);
+              if (foundC !== -1) cIdx = foundC;
+            }
+          }
+        }
+      } catch(e) {}
+      
+      loadStory(sIdx, cIdx);
+    }
+
+    // 9. Cài đặt các Sự kiện Giao diện (Event Listeners)
+    let sleepTimerInterval; // Biến lưu trữ vòng lặp hẹn giờ
+
+    function startSleepTimer(minutes) {
+      clearInterval(sleepTimerInterval);
+      if (minutes === 0) {
+        if(dom.sleepTimerCountdown) dom.sleepTimerCountdown.classList.add('hidden');
+        if(dom.sleepTimerSelect) dom.sleepTimerSelect.value = "0";
+        return;
+      }
+      
+      const endTime = Date.now() + minutes * 60 * 1000;
+      if(dom.sleepTimerCountdown) dom.sleepTimerCountdown.classList.remove('hidden');
+
+      const updateTimer = () => {
+        const remaining = endTime - Date.now();
+        if (remaining <= 0) {
+          clearInterval(sleepTimerInterval);
+          if(dom.sleepTimerCountdown) dom.sleepTimerCountdown.classList.add('hidden');
+          if(dom.sleepTimerSelect) dom.sleepTimerSelect.value = "0";
+          pause();
+          showToast("Đã hết thời gian hẹn giờ. Đang tạm dừng đọc.");
+          return;
+        }
+        const m = Math.floor(remaining / 60000);
+        const s = Math.floor((remaining % 60000) / 1000);
+        if(dom.sleepTimerCountdown) dom.sleepTimerCountdown.textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
+      };
+      
+      updateTimer();
+      sleepTimerInterval = setInterval(updateTimer, 1000);
+    }
+
+    function setupEvents() {
+      // Điều khiển Playback
+      dom.playPauseBtn.onclick = togglePlay;
+      dom.nextSentenceBtn.onclick = () => { if(state.currentSentenceIndex < state.sentences.length-1) jumpTo(state.currentSentenceIndex+1); };
+      dom.prevSentenceBtn.onclick = () => { if(state.currentSentenceIndex > 0) jumpTo(state.currentSentenceIndex-1); };
+      dom.nextChapterPlayerBtn.onclick = nextChapter;
+      dom.prevChapterPlayerBtn.onclick = prevChapter;
+      dom.nextChapterTopBtn.onclick = nextChapter;
+      dom.prevChapterTopBtn.onclick = prevChapter;
+
+      dom.storySelect.onchange = (e) => loadStory(parseInt(e.target.value), 0);
+
+      // Cài đặt Giao diện
+      document.querySelectorAll('.theme-choice-btn').forEach(b => {
+        b.onclick = () => { state.theme = b.dataset.themeChoice; applySettings(); saveSettings(); };
+      });
+      dom.increaseFontBtn.onclick = () => { state.fontSize += 1; applySettings(); saveSettings(); };
+      dom.decreaseFontBtn.onclick = () => { state.fontSize = Math.max(12, state.fontSize - 1); applySettings(); saveSettings(); };
+
+      // Xử lý Tốc độ đọc
+      const updateSpeed = (val) => { 
+        state.rate = parseFloat(val); 
+        applySettings(); 
+        saveSettings(); 
+        // Áp dụng ngay lập tức cho giọng Cloud nếu đang phát
+        if (state.isPlaying && state.voiceId === 'cloud:vi-female') {
+          state.cloudAudio.playbackRate = state.rate;
+        }
+      };
+      
+      if(dom.speedRangeSlider) dom.speedRangeSlider.oninput = (e) => updateSpeed(e.target.value);
+      if(dom.mobileSpeedRangeSlider) dom.mobileSpeedRangeSlider.oninput = (e) => updateSpeed(e.target.value);
+      
+      // Gắn sự kiện cho các nút chọn tốc độ nhanh (0.75x, 1.0x, 1.25x...)
+      document.querySelectorAll('.speed-preset-btn').forEach(btn => {
+        btn.onclick = () => updateSpeed(btn.dataset.speed);
+      });
+
+      // Nút chạm đổi nhanh vòng lặp tốc độ trên mobile
+      if (dom.mobileQuickSpeedBtn) {
+        const speeds = [0.75, 1.0, 1.25, 1.5, 2.0];
+        dom.mobileQuickSpeedBtn.onclick = () => {
+          let currentIdx = speeds.indexOf(state.rate);
+          if (currentIdx === -1) currentIdx = 1;
+          let nextIdx = (currentIdx + 1) % speeds.length;
+          updateSpeed(speeds[nextIdx]);
+        };
+      }
+
+      // Xử lý Hẹn giờ tắt
+      if (dom.sleepTimerSelect) {
+        dom.sleepTimerSelect.onchange = (e) => {
+          startSleepTimer(parseInt(e.target.value));
+        };
+      }
+
+      // Nút thu gọn / mở rộng bảng giọng đọc trên mobile
+      if (dom.toggleVoicePanelBtn) {
+        dom.toggleVoicePanelBtn.onclick = () => {
+          const panel = dom.voiceControlsRow;
+          if (panel.classList.contains('hidden')) {
+            panel.classList.remove('hidden');
+            panel.classList.add('flex');
+            if(dom.toggleVoicePanelArrow) dom.toggleVoicePanelArrow.textContent = '▾';
+          } else {
+            panel.classList.add('hidden');
+            panel.classList.remove('flex');
+            if(dom.toggleVoicePanelArrow) dom.toggleVoicePanelArrow.textContent = '▴';
+          }
+        };
+      }
+
+      // Xử lý Cao độ (Pitch) & Sắc thái
+      const updatePitch = (val) => { state.pitch = parseFloat(val); applySettings(); saveSettings(); };
+      if(dom.pitchRangeSlider) dom.pitchRangeSlider.oninput = (e) => updatePitch(e.target.value);
+      
+      if (dom.voicePresetSelect) {
+        dom.voicePresetSelect.onchange = (e) => {
+          const val = e.target.value;
+          if (val !== 'custom') {
+            updatePitch(val);
+            if (dom.pitchRangeSlider) dom.pitchRangeSlider.value = val;
+          }
+        };
+      }
+
+      if(dom.autoNextChapterCheckbox) dom.autoNextChapterCheckbox.onchange = (e) => { state.autoNext = e.target.checked; applySettings(); saveSettings(); };
+      if(dom.autoScrollCheckbox) dom.autoScrollCheckbox.onchange = (e) => { state.autoScroll = e.target.checked; applySettings(); saveSettings(); };
+
+      if(dom.voiceSelect) dom.voiceSelect.onchange = (e) => { state.voiceId = e.target.value; saveSettings(); };
+
+      // Ngăn kéo Mobile (Sidebar Drawer)
+      dom.toggleDrawerBtn.onclick = openMobileSidebar;
+      dom.closeDrawerBtn.onclick = closeMobileSidebar;
+      dom.mobileSidebarBackdrop.onclick = closeMobileSidebar;
+
+      // Nút chạm hiển thị tên chương ở thanh Player dưới cùng để mở mục lục trên mobile
+      if(dom.playerChapterInfoBtn) {
+        dom.playerChapterInfoBtn.onclick = openMobileSidebar;
+      }
+
+      // Đóng/Mở các Modal phụ trợ
+      const toggleModal = (modal, show) => { if (show) modal.classList.remove('hidden'); else modal.classList.add('hidden'); };
+      
+      if(dom.openHelpModalBtn) dom.openHelpModalBtn.onclick = () => toggleModal(dom.helpModal, true);
+      if(dom.closeHelpModalBtn) dom.closeHelpModalBtn.onclick = () => toggleModal(dom.helpModal, false);
+      
+      if(dom.openQuickAddModalBtn) dom.openQuickAddModalBtn.onclick = () => {
+        if(dom.quickExistingStorySelect) {
+          dom.quickExistingStorySelect.innerHTML = state.stories.map((s, i) => `<option value="${i}">${s.title}</option>`).join('');
+        }
+        toggleModal(dom.quickAddStoryModal, true);
+      };
+      if(dom.closeQuickAddModalBtn) dom.closeQuickAddModalBtn.onclick = () => toggleModal(dom.quickAddStoryModal, false);
+      if(dom.cancelQuickAddBtn) dom.cancelQuickAddBtn.onclick = () => toggleModal(dom.quickAddStoryModal, false);
+      
+      // Xử lý nạp tệp từ máy tính
+      const processLocalFiles = async (files, defaultTitle) => {
+        const fileArr = Array.from(files).sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true}));
+        let chapters = [];
+        for (let file of fileArr) {
+          if (file.name.endsWith('.txt')) {
+            const text = await file.text();
+            chapters.push({ title: file.name.replace('.txt', ''), content: text });
+          }
+        }
+        if (chapters.length > 0) {
+          state.stories.push({ title: defaultTitle || 'Truyện Mới', chapters: chapters });
+          renderSidebar();
+          showToast(`Đã nạp thành công bộ truyện mới!`);
+          toggleModal(dom.quickAddStoryModal, false);
+        } else {
+          showToast('Không tìm thấy file .txt nào!');
+        }
+      };
+
+      if(dom.quickFolderUploadInput) dom.quickFolderUploadInput.onchange = (e) => {
+        if (!e.target.files.length) return;
+        const folderName = e.target.files[0].webkitRelativePath.split('/')[0];
+        const title = dom.quickBatchStoryTitleInput.value || folderName || 'Truyện Mới';
+        processLocalFiles(e.target.files, title);
+        e.target.value = '';
+      };
+
+      if(dom.quickMultiFilesInput) dom.quickMultiFilesInput.onchange = (e) => {
+        if (!e.target.files.length) return;
+        const title = dom.quickBatchStoryTitleInput.value || 'Truyện Mới';
+        processLocalFiles(e.target.files, title);
+        e.target.value = '';
+      };
+
+      // Xử lý form thêm chương thủ công
+      if(dom.quickAddStoryForm) dom.quickAddStoryForm.onsubmit = (e) => {
+        e.preventDefault();
+        const mode = document.querySelector('input[name="quickAddMode"]:checked').value;
+        const cTitle = dom.quickChapterTitleInput.value.trim();
+        const cContent = dom.quickChapterContentInput.value.trim();
+        if(!cTitle || !cContent) return showToast('Vui lòng nhập tên và nội dung chương!');
+        
+        if(mode === 'new_story') {
+          const sTitle = dom.quickStoryTitleInput.value.trim() || 'Truyện Mới';
+          state.stories.push({ title: sTitle, chapters: [{ title: cTitle, content: cContent }] });
+        } else {
+          const sIdx = parseInt(dom.quickExistingStorySelect.value);
+          if(isNaN(sIdx) || !state.stories[sIdx]) return showToast('Vui lòng chọn truyện hợp lệ!');
+          state.stories[sIdx].chapters.push({ title: cTitle, content: cContent });
+        }
+        
+        renderSidebar();
+        showToast('Đã thêm chương thành công!');
+        dom.quickAddStoryForm.reset();
+        toggleModal(dom.quickAddStoryModal, false);
+      };
+
+      // Radio button chuyển chế độ Thêm mới/Có sẵn
+      document.querySelectorAll('input[name="quickAddMode"]').forEach(radio => {
+        radio.onchange = (e) => {
+          if(e.target.value === 'new_story') {
+            dom.newStoryTitleGroup.classList.remove('hidden');
+            dom.existingStorySelectGroup.classList.add('hidden');
+          } else {
+            dom.newStoryTitleGroup.classList.add('hidden');
+            dom.existingStorySelectGroup.classList.remove('hidden');
+          }
+        };
+      });
+
+      // Xuất file JSON
+      if(dom.exportJsonBtn) dom.exportJsonBtn.onclick = () => {
+        if(state.stories.length === 0) return showToast('Thư viện đang trống!');
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state.stories, null, 2));
+        const anchor = document.createElement('a');
+        anchor.setAttribute("href", dataStr);
+        anchor.setAttribute("download", "stories.json");
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        showToast('Đã tải xuống stories.json thành công!');
+      };
+      
+      if(dom.openBookmarksModalBtn) dom.openBookmarksModalBtn.onclick = () => toggleModal(dom.bookmarksModal, true);
+      if(dom.closeBookmarksModalBtn) dom.closeBookmarksModalBtn.onclick = () => toggleModal(dom.bookmarksModal, false);
+      
+      if(dom.voiceTipsBtn) dom.voiceTipsBtn.onclick = () => toggleModal(dom.voiceTipsModal, true);
+      if(dom.closeVoiceTipsModalBtn) dom.closeVoiceTipsModalBtn.onclick = () => toggleModal(dom.voiceTipsModal, false);
+
+      if (dom.reloadHostingDataBtn) {
+        dom.reloadHostingDataBtn.onclick = async () => {
+          await loadLibraryData();
+          showToast('Đã làm mới dữ liệu từ data/stories.json');
+        };
+      }
+      if (dom.mobileMenuReloadDataBtn) {
+        dom.mobileMenuReloadDataBtn.onclick = async () => {
+          if(dom.mobileMoreMenuDropdown) dom.mobileMoreMenuDropdown.classList.add('hidden');
+          await loadLibraryData();
+          showToast('Đã làm mới dữ liệu từ data/stories.json');
+        };
+      }
+      if (dom.mobileMoreMenuBtn) {
+        dom.mobileMoreMenuBtn.onclick = () => {
+          if(dom.mobileMoreMenuDropdown) dom.mobileMoreMenuDropdown.classList.toggle('hidden');
+        };
+      }
+
+      // Phím tắt bàn phím
+      window.onkeydown = (e) => {
+        if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          togglePlay();
+        }
+      };
+    }
+
+    // 10. Kích hoạt
+    initAuth();
+  </script>
+</body>
+</html>
