@@ -686,7 +686,7 @@
               <path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
             </svg>
             <select id="voiceSelect" aria-label="Chọn giọng đọc tiếng Việt" class="bg-transparent text-xs font-semibold w-full focus:outline-none truncate">
-              <option value="cloud:vi-female">[Online Cloud] Giọng Nữ Tiếng Việt Chuẩn (Google TTS)</option>
+              <option value="cloud:vi-female">[Online Cloud] Giọng Nữ Google Tiếng Việt</option>
             </select>
           </div>
 
@@ -963,2303 +963,452 @@
   <div id="toastContainer" class="fixed top-16 sm:top-20 inset-x-3 sm:inset-x-auto sm:right-4 z-50 flex flex-col items-center sm:items-end gap-2 pointer-events-none"></div>
 
   <script>
-    // Cấu hình worker cho PDF.js
+    // 1. Cấu hình Worker cho PDF.js
     if (window.pdfjsLib) {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
 
-    // =========================================================================
-    // 1. DỮ LIỆU MẪU DỰ PHÒNG (CHỈ DÙNG KHI THƯ MỤC data/ TRÊN HOSTING CHƯA CÓ TỆP)
-    // =========================================================================
-    const DEFAULT_FALLBACK_STORIES = [
-      {
-        title: 'Truyện Mẫu: Khu Vườn Ánh Trăng',
-        chapters: [
-          {
-            title: 'Chương 1: Tiếng chuông gió bên hiên nhà',
-            content: [
-              'Đêm cuối thu, làn sương mỏng nhẹ nhàng phủ xuống con ngõ nhỏ dẫn vào khu vườn cổ sau lưng đồi.',
-              'Trên hiên gỗ cũ kỹ, chiếc chuông gió bằng đồng khẽ ngân lên những thanh âm trong trẻo mỗi khi có làn gió thu lướt qua.',
-              'Minh ngồi bên bàn trà ấm, lật mở từng trang cuốn sổ tay bìa da mà ông nội để lại trước chuyến đi xa.',
-              'Mỗi dòng chữ viết tay đều ngay ngắn, kể về những câu chuyện kỳ diệu ẩn giấu dưới tán cây long não trăm tuổi.',
-              'Cậu mỉm cười, nhấp một ngụm trà hoa cúc nóng hổi và bắt đầu lắng nghe nhịp thở yên bình của màn đêm.'
-            ].join('\n')
-          },
-          {
-            title: 'Chương 2: Ánh sáng dưới tán long não',
-            content: [
-              'Nửa đêm, ánh trăng rằm vằng vặc soi sáng khoảng sân rải sỏi trắng xóa như mặt hồ tĩnh lặng.',
-              'Từ gốc cây long não già, những đốm sáng nhỏ li ti bỗng bay lên, lượn vòng quanh như những chiếc đèn lồng tí hon.',
-              'Minh bước xuống bậc thềm, khẽ đưa tay đón một đốm sáng đang đậu nhẹ trên đầu ngón tay mình.',
-              'Khoảnh khắc ấy, mọi ồn ào của phố thị dường như tan biến, chỉ còn lại cảm giác thư thái và ấm áp lan tỏa trong lòng.'
-            ].join('\n')
-          }
-        ]
-      }
-    ];
-
-    // =========================================================================
-    // 2. BỘ NHỚ AN TOÀN (SAFE STORAGE) & INDEXEDDB LƯU TRUYỆN NẠP THÊM
-    // =========================================================================
-    const safeStorage = (() => {
-      const memoryCache = new Map();
-      let localAvailable = false;
-
-      try {
-        const probeKey = '__audio_truyen_storage_probe__';
-        window.localStorage.setItem(probeKey, '1');
-        window.localStorage.removeItem(probeKey);
-        localAvailable = true;
-      } catch (err) {
-        localAvailable = false;
-      }
-
-      return {
-        getItem(key) {
-          if (localAvailable) {
-            try {
-              const val = window.localStorage.getItem(key);
-              if (val !== null) return val;
-            } catch (err) {
-              // Dự phòng sang bộ nhớ RAM nếu localStorage bị chặn
-            }
-          }
-          return memoryCache.has(key) ? memoryCache.get(key) : null;
-        },
-        setItem(key, value) {
-          const strVal = String(value);
-          memoryCache.set(key, strVal);
-          if (localAvailable) {
-            try {
-              window.localStorage.setItem(key, strVal);
-            } catch (err) {
-              // Giữ dữ liệu trong RAM
-            }
-          }
-        },
-        removeItem(key) {
-          memoryCache.delete(key);
-          if (localAvailable) {
-            try {
-              window.localStorage.removeItem(key);
-            } catch (err) {
-              // Bỏ qua lỗi
-            }
-          }
+    // 2. Định nghĩa dom tự động bằng Proxy (Khắc phục vĩnh viễn lỗi 'dom is not defined')
+    const dom = new Proxy({}, {
+      get: function(target, name) {
+        if (!(name in target)) {
+          target[name] = document.getElementById(name);
         }
-      };
-    })();
-
-    const CUSTOM_STORIES_DB_NAME = 'AudioTruyenCustomLibraryDB';
-    const CUSTOM_STORIES_STORE = 'customStories';
-
-    function openCustomStoriesDB() {
-      return new Promise((resolve, reject) => {
-        if (!window.indexedDB) {
-          reject(new Error('Trình duyệt không hỗ trợ IndexedDB'));
-          return;
-        }
-        const request = window.indexedDB.open(CUSTOM_STORIES_DB_NAME, 1);
-        request.onupgradeneeded = (e) => {
-          const db = e.target.result;
-          if (!db.objectStoreNames.contains(CUSTOM_STORIES_STORE)) {
-            db.createObjectStore(CUSTOM_STORIES_STORE, { keyPath: 'title' });
-          }
-        };
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-    }
-
-    async function saveCustomStoryToDB(story) {
-      try {
-        const db = await openCustomStoriesDB();
-        return new Promise((resolve) => {
-          const tx = db.transaction(CUSTOM_STORIES_STORE, 'readwrite');
-          tx.objectStore(CUSTOM_STORIES_STORE).put({
-            title: story.title,
-            chapters: story.chapters,
-            updatedAt: Date.now()
-          });
-          tx.oncomplete = () => resolve(true);
-          tx.onerror = () => resolve(false);
-        });
-      } catch (err) {
-        return false;
+        return target[name];
       }
-    }
+    });
 
-    async function loadCustomStoriesFromDB() {
-      try {
-        const db = await openCustomStoriesDB();
-        return new Promise((resolve) => {
-          const tx = db.transaction(CUSTOM_STORIES_STORE, 'readonly');
-          const req = tx.objectStore(CUSTOM_STORIES_STORE).getAll();
-          req.onsuccess = () => resolve(Array.isArray(req.result) ? req.result : []);
-          req.onerror = () => resolve([]);
-        });
-      } catch (err) {
-        return [];
-      }
-    }
-
-    const STORAGE_KEY = 'audio_truyen_hosting_state_v2';
-    const BOOKMARKS_STORAGE_KEY = 'audio_truyen_hosting_bookmarks_v2';
-    const AUTH_STORAGE_KEY = 'audio_truyen_auth_unlocked_v1';
-    const REQUIRED_ACCESS_KEY = 'Mothaiba@123';
-
+    // 3. Khai báo State
     const state = {
       isLocked: true,
-      stories: [...DEFAULT_FALLBACK_STORIES],
-      hostingStories: [],
-      customStories: [],
-      currentStoryIndex: 0,
-      currentChapterIndex: 0,
+      stories: [],
+      currentStoryIndex: -1,
+      currentChapterIndex: -1,
       sentences: [],
-      sentenceElements: [],
-      currentSentenceIndex: 0,
+      currentSentenceIndex: -1,
       isPlaying: false,
-      isPaused: false,
       playbackSessionId: 0,
-      rate: 1.0,
+      rate: 1.0, 
       pitch: 1.0,
-      selectedVoiceId: 'cloud:vi-female',
-      availableVoices: [],
-      showAllLanguages: false,
+      voiceId: 'cloud:vi-female',
+      voices: [],
+      theme: 'sepia', 
       fontSize: 19,
-      theme: 'sepia',
-      autoNextChapter: true,
+      autoNext: true, 
       autoScroll: true,
       bookmarks: [],
-      chapterFilterMode: 'all',
-      bookmarkModalScope: 'all',
-      sidebarBookmarksExpanded: true,
-      sleepTimerMinutes: 0,
-      sleepTimerEndTime: 0,
-      sleepTimerInterval: null,
-      cloudAudioElement: null,
-      cloudPrefetchCache: new Map()
+      cloudAudio: new Audio()
     };
 
-    // =========================================================================
-    // 3. THAM CHIẾU PHẦN TỬ DOM
-    // =========================================================================
-    const dom = {
-      authGateOverlay: document.getElementById('authGateOverlay'),
-      authGateCard: document.getElementById('authGateCard'),
-      authGateForm: document.getElementById('authGateForm'),
-      authKeyInput: document.getElementById('authKeyInput'),
-      toggleAuthKeyVisibilityBtn: document.getElementById('toggleAuthKeyVisibilityBtn'),
-      authEyeOpenIcon: document.getElementById('authEyeOpenIcon'),
-      authEyeClosedIcon: document.getElementById('authEyeClosedIcon'),
-      authRememberCheckbox: document.getElementById('authRememberCheckbox'),
-      authErrorMsg: document.getElementById('authErrorMsg'),
-      authLoadingBar: document.getElementById('authLoadingBar'),
-      authLoadingStatusText: document.getElementById('authLoadingStatusText'),
-      authLoadingPercentText: document.getElementById('authLoadingPercentText'),
-      mainContentWrapper: document.getElementById('mainContentWrapper'),
-      audioPlayerFooter: document.getElementById('audioPlayerFooter'),
-      dataSourceSubtitle: document.getElementById('dataSourceSubtitle'),
-      toggleDrawerBtn: document.getElementById('toggleDrawerBtn'),
-      mobileChapterCount: document.getElementById('mobileChapterCount'),
-      openBookmarksModalBtn: document.getElementById('openBookmarksModalBtn'),
-      headerBookmarkCountBadge: document.getElementById('headerBookmarkCountBadge'),
-      openQuickAddModalBtn: document.getElementById('openQuickAddModalBtn'),
-      reloadHostingDataBtn: document.getElementById('reloadHostingDataBtn'),
-      openHelpModalBtn: document.getElementById('openHelpModalBtn'),
-      mobileMoreMenuBtn: document.getElementById('mobileMoreMenuBtn'),
-      mobileMoreMenuDropdown: document.getElementById('mobileMoreMenuDropdown'),
-      mobileMenuReloadDataBtn: document.getElementById('mobileMenuReloadDataBtn'),
-      mobileMenuQuickAddBtn: document.getElementById('mobileMenuQuickAddBtn'),
-      mobileMenuHelpBtn: document.getElementById('mobileMenuHelpBtn'),
-      mobileSidebarBackdrop: document.getElementById('mobileSidebarBackdrop'),
-      chapterSidebar: document.getElementById('chapterSidebar'),
-      closeDrawerBtn: document.getElementById('closeDrawerBtn'),
-      storySelect: document.getElementById('storySelect'),
-      sidebarStatsText: document.getElementById('sidebarStatsText'),
-      sidebarBookmarksSection: document.getElementById('sidebarBookmarksSection'),
-      toggleSidebarBookmarksBtn: document.getElementById('toggleSidebarBookmarksBtn'),
-      sidebarBookmarksChevron: document.getElementById('sidebarBookmarksChevron'),
-      sidebarBookmarksBody: document.getElementById('sidebarBookmarksBody'),
-      sidebarBookmarkList: document.getElementById('sidebarBookmarkList'),
-      sidebarBookmarkCountBadge: document.getElementById('sidebarBookmarkCountBadge'),
-      chapterSearchInput: document.getElementById('chapterSearchInput'),
-      filterAllChaptersBtn: document.getElementById('filterAllChaptersBtn'),
-      filterBookmarkedChaptersBtn: document.getElementById('filterBookmarkedChaptersBtn'),
-      bookmarkedCountBadge: document.getElementById('bookmarkedCountBadge'),
-      chapterListContainer: document.getElementById('chapterListContainer'),
-      storyTitleBadge: document.getElementById('storyTitleBadge'),
-      chapterBadge: document.getElementById('chapterBadge'),
-      sentenceProgressText: document.getElementById('sentenceProgressText'),
-      chapterTitleHeading: document.getElementById('chapterTitleHeading'),
-      chapterFileMeta: document.getElementById('chapterFileMeta'),
-      readingProgressBar: document.getElementById('readingProgressBar'),
-      toggleBookmarkBtn: document.getElementById('toggleBookmarkBtn'),
-      bookmarkOutlineIcon: document.getElementById('bookmarkOutlineIcon'),
-      bookmarkFilledIcon: document.getElementById('bookmarkFilledIcon'),
-      toggleBookmarkText: document.getElementById('toggleBookmarkText'),
-      updateBookmarkPositionBtn: document.getElementById('updateBookmarkPositionBtn'),
-      prevChapterTopBtn: document.getElementById('prevChapterTopBtn'),
-      nextChapterTopBtn: document.getElementById('nextChapterTopBtn'),
-      fontSizeIndicator: document.getElementById('fontSizeIndicator'),
-      decreaseFontBtn: document.getElementById('decreaseFontBtn'),
-      increaseFontBtn: document.getElementById('increaseFontBtn'),
-      autoNextChapterCheckbox: document.getElementById('autoNextChapterCheckbox'),
-      autoScrollCheckbox: document.getElementById('autoScrollCheckbox'),
-      noVietnameseVoiceNotice: document.getElementById('noVietnameseVoiceNotice'),
-      storyReaderContainer: document.getElementById('storyReaderContainer'),
-      playerChapterInfoBtn: document.getElementById('playerChapterInfoBtn'),
-      playerChapterNumberBadge: document.getElementById('playerChapterNumberBadge'),
-      playerChapterTitleText: document.getElementById('playerChapterTitleText'),
-      playerSentenceProgressBadge: document.getElementById('playerSentenceProgressBadge'),
-      prevChapterPlayerBtn: document.getElementById('prevChapterPlayerBtn'),
-      prevSentenceBtn: document.getElementById('prevSentenceBtn'),
-      playPauseBtn: document.getElementById('playPauseBtn'),
-      playIcon: document.getElementById('playIcon'),
-      pauseIcon: document.getElementById('pauseIcon'),
-      playPauseText: document.getElementById('playPauseText'),
-      nextSentenceBtn: document.getElementById('nextSentenceBtn'),
-      nextChapterPlayerBtn: document.getElementById('nextChapterPlayerBtn'),
-      mobileQuickSpeedBtn: document.getElementById('mobileQuickSpeedBtn'),
-      mobileSpeedBadge: document.getElementById('mobileSpeedBadge'),
-      speedValueLabel: document.getElementById('speedValueLabel'),
-      speedRangeSlider: document.getElementById('speedRangeSlider'),
-      mobileSpeedRangeSlider: document.getElementById('mobileSpeedRangeSlider'),
-      mobileSpeedSliderValue: document.getElementById('mobileSpeedSliderValue'),
-      sleepTimerSelect: document.getElementById('sleepTimerSelect'),
-      sleepTimerCountdown: document.getElementById('sleepTimerCountdown'),
-      toggleVoicePanelBtn: document.getElementById('toggleVoicePanelBtn'),
-      toggleVoicePanelArrow: document.getElementById('toggleVoicePanelArrow'),
-      voiceControlsRow: document.getElementById('voiceControlsRow'),
-      voiceSelect: document.getElementById('voiceSelect'),
-      testVoiceBtn: document.getElementById('testVoiceBtn'),
-      testVoiceBtnText: document.getElementById('testVoiceBtnText'),
-      voiceTipsBtn: document.getElementById('voiceTipsBtn'),
-      showAllLanguagesCheckbox: document.getElementById('showAllLanguagesCheckbox'),
-      voicePresetSelect: document.getElementById('voicePresetSelect'),
-      pitchRangeSlider: document.getElementById('pitchRangeSlider'),
-      pitchValueLabel: document.getElementById('pitchValueLabel'),
-      helpModal: document.getElementById('helpModal'),
-      closeHelpModalBtn: document.getElementById('closeHelpModalBtn'),
-      quickAddStoryModal: document.getElementById('quickAddStoryModal'),
-      closeQuickAddModalBtn: document.getElementById('closeQuickAddModalBtn'),
-      quickBatchStoryTitleInput: document.getElementById('quickBatchStoryTitleInput'),
-      quickFolderUploadInput: document.getElementById('quickFolderUploadInput'),
-      quickMultiFilesInput: document.getElementById('quickMultiFilesInput'),
-      quickAddStoryForm: document.getElementById('quickAddStoryForm'),
-      newStoryTitleGroup: document.getElementById('newStoryTitleGroup'),
-      existingStorySelectGroup: document.getElementById('existingStorySelectGroup'),
-      quickStoryTitleInput: document.getElementById('quickStoryTitleInput'),
-      quickExistingStorySelect: document.getElementById('quickExistingStorySelect'),
-      quickChapterTitleInput: document.getElementById('quickChapterTitleInput'),
-      quickChapterContentInput: document.getElementById('quickChapterContentInput'),
-      cancelQuickAddBtn: document.getElementById('cancelQuickAddBtn'),
-      voiceTipsModal: document.getElementById('voiceTipsModal'),
-      closeVoiceTipsModalBtn: document.getElementById('closeVoiceTipsModalBtn'),
-      bookmarksModal: document.getElementById('bookmarksModal'),
-      bookmarksModalSubtitle: document.getElementById('bookmarksModalSubtitle'),
-      closeBookmarksModalBtn: document.getElementById('closeBookmarksModalBtn'),
-      bookmarkScopeAllBtn: document.getElementById('bookmarkScopeAllBtn'),
-      bookmarkScopeCurrentBtn: document.getElementById('bookmarkScopeCurrentBtn'),
-      clearAllBookmarksBtn: document.getElementById('clearAllBookmarksBtn'),
-      bookmarksModalList: document.getElementById('bookmarksModalList'),
-      toastContainer: document.getElementById('toastContainer')
-    };
-
-    // =========================================================================
-    // 4. TIỆN ÍCH CHUNG (THÔNG BÁO TOAST, SẮP XẾP TỰ NHIÊN, TÁCH CHƯƠNG & PDF)
-    // =========================================================================
-    function showToast(message, durationMs = 3000) {
-      if (!dom.toastContainer) return;
-      const toast = document.createElement('div');
-      toast.className = 'px-4 py-2.5 rounded-2xl theme-surface border text-xs sm:text-sm font-medium shadow-lg pointer-events-auto transition-all duration-300 max-w-[92vw] sm:max-w-sm';
-      toast.style.borderColor = 'var(--accent)';
-      toast.textContent = message;
-      dom.toastContainer.appendChild(toast);
-
-      setTimeout(() => {
-        toast.classList.add('opacity-0', '-translate-y-2');
-        setTimeout(() => toast.remove(), 300);
-      }, durationMs);
-    }
-
-    function naturalCompare(a, b) {
-      return String(a).localeCompare(String(b), 'vi', { numeric: true, sensitivity: 'base' });
-    }
-
-    function formatPrettyName(rawName) {
-      return String(rawName || '')
-        .replace(/\.[^/.]+$/, '')
-        .replace(/[_-]+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    }
-
-    function normalizeLineBreaks(text) {
-      return String(text || '')
-        .replace(/\r\n/g, '\n')
-        .replace(/\r/g, '\n')
-        .replace(/[ \t]+\n/g, '\n')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
-    }
-
-    function splitTextIntoChapters(rawText, fallbackTitle) {
-      const cleaned = normalizeLineBreaks(rawText);
-      if (!cleaned) return [];
-
-      // Nhận diện tiêu đề chương ở đầu dòng: Chương 1, Hồi 1, Chapter 1...
-      const chapterRegex = /(?:^|\n)(?=(?:Chương|CHƯƠNG|Hồi|HỒI|Quyển|QUYỂN|Chapter|CHAPTER)\s+\d+[^\n]*)/g;
-      const parts = cleaned.split(chapterRegex).map(p => p.trim()).filter(Boolean);
-
-      if (parts.length > 1) {
-        return parts.map((block, idx) => {
-          const lines = block.split('\n');
-          const firstLine = (lines[0] || '').trim();
-          const hasValidHeader = firstLine.length > 0 && firstLine.length <= 120;
-          const title = hasValidHeader ? firstLine : `Chương ${idx + 1}`;
-          const content = hasValidHeader ? lines.slice(1).join('\n').trim() : block;
-          return {
-            title,
-            content: content || firstLine
-          };
-        }).filter(c => c.content.trim().length > 0);
-      }
-
-      return [{
-        title: fallbackTitle || 'Chương 1',
-        content: cleaned
-      }];
-    }
-
-    // Trích xuất văn bản từ tệp PDF qua PDF.js (giữ nguyên cấu trúc xuống dòng)
-    async function extractTextFromPdfArrayBuffer(arrayBuffer) {
-      if (!window.pdfjsLib) {
-        throw new Error('Thư viện PDF.js chưa sẵn sàng');
-      }
-      const loadingTask = window.pdfjsLib.getDocument({ data: arrayBuffer });
-      const pdfDoc = await loadingTask.promise;
-      const pageTexts = [];
-
-      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-        const page = await pdfDoc.getPage(pageNum);
-        const textContent = await page.getTextContent();
-        let lastY = null;
-        let currentLine = '';
-        const lines = [];
-
-        for (const item of textContent.items) {
-          const str = item.str || '';
-          const y = Array.isArray(item.transform) ? item.transform[5] : null;
-
-          if (lastY !== null && y !== null && Math.abs(y - lastY) > 6) {
-            if (currentLine.trim()) lines.push(currentLine.trim());
-            currentLine = str;
-          } else {
-            currentLine += (currentLine && str && !currentLine.endsWith(' ') && !str.startsWith(' ') ? ' ' : '') + str;
-          }
-
-          if (item.hasEOL) {
-            if (currentLine.trim()) lines.push(currentLine.trim());
-            currentLine = '';
-            lastY = null;
-          } else if (y !== null) {
-            lastY = y;
-          }
-        }
-        if (currentLine.trim()) lines.push(currentLine.trim());
-
-        // Lọc bỏ số trang đứng riêng lẻ ở đầu/cuối trang
-        const filteredLines = lines.filter(line => !/^\d+$/.test(line.trim()));
-        if (filteredLines.length > 0) {
-          pageTexts.push(filteredLines.join('\n'));
-        }
-      }
-
-      return normalizeLineBreaks(pageTexts.join('\n\n'));
-    }
-
-    async function parseStoryFileContent(fileName, arrayBuffer) {
-      const lower = fileName.toLowerCase();
-      if (lower.endsWith('.pdf')) {
-        return await extractTextFromPdfArrayBuffer(arrayBuffer);
-      }
-      const decoder = new TextDecoder('utf-8');
-      const rawText = decoder.decode(arrayBuffer);
-
-      if (lower.endsWith('.json')) {
-        try {
-          const parsed = JSON.parse(rawText);
-          if (typeof parsed === 'string') return normalizeLineBreaks(parsed);
-          if (parsed && typeof parsed.content === 'string') return normalizeLineBreaks(parsed.content);
-        } catch (err) {
-          // Xử lý như văn bản thuần nếu JSON không đúng định dạng đơn chương
-        }
-      }
-      return normalizeLineBreaks(rawText);
-    }
-
-    // =========================================================================
-    // 5. TỰ ĐỘNG QUÉT & NẠP DỮ LIỆU TỪ THƯ MỤC data/ TRÊN HOSTING
-    // =========================================================================
-    const SUPPORTED_EXT_REGEX = /\.(txt|pdf|md|json)$/i;
-
-    function rebuildCombinedStoriesLibrary() {
-      const mergedMap = new Map();
-
-      const addStoryToMap = (story) => {
-        if (!story || !story.title || !Array.isArray(story.chapters) || story.chapters.length === 0) return;
-        const cleanTitle = story.title.trim();
-        if (!mergedMap.has(cleanTitle)) {
-          mergedMap.set(cleanTitle, {
-            title: cleanTitle,
-            chapters: [...story.chapters]
-          });
-        } else {
-          const existing = mergedMap.get(cleanTitle);
-          const chapterTitles = new Set(existing.chapters.map(c => c.title));
-          story.chapters.forEach(ch => {
-            if (!chapterTitles.has(ch.title)) {
-              existing.chapters.push(ch);
-            }
-          });
-        }
-      };
-
-      state.hostingStories.forEach(addStoryToMap);
-      state.customStories.forEach(addStoryToMap);
-
-      if (mergedMap.size === 0) {
-        state.stories = [...DEFAULT_FALLBACK_STORIES];
+    // 4. Màn hình khóa (Key Password: Mothaiba@123)
+    function initAuth() {
+      const unlocked = localStorage.getItem('audio_truyen_auth_v1');
+      if (unlocked === 'Mothaiba@123') {
+        unlockApp();
       } else {
-        state.stories = Array.from(mergedMap.values());
-      }
-    }
-
-    // Phương pháp A: Đọc qua data/manifest.json nếu có
-    async function tryFetchManifestPaths() {
-      try {
-        const res = await fetch(`data/manifest.json?t=${Date.now()}`, { cache: 'no-store' });
-        if (!res.ok) return null;
-        const json = await res.json();
-
-        if (Array.isArray(json)) {
-          return json.filter(p => typeof p === 'string' && SUPPORTED_EXT_REGEX.test(p));
-        }
-        if (json && Array.isArray(json.files)) {
-          return json.files.filter(p => typeof p === 'string' && SUPPORTED_EXT_REGEX.test(p));
-        }
-      } catch (err) {
-        // Không có manifest.json, tiếp tục phương pháp khác
-      }
-      return null;
-    }
-
-    // Phương pháp B: Tự động quét cây thư mục qua GitHub API nếu chạy trên GitHub Pages
-    async function tryFetchGitHubPagesDataPaths() {
-      try {
-        const host = window.location.hostname;
-        if (!host.endsWith('.github.io')) return null;
-
-        const owner = host.replace('.github.io', '');
-        const pathParts = window.location.pathname.split('/').filter(Boolean);
-        const repo = pathParts.length > 0 ? pathParts[0] : `${owner}.github.io`;
-
-        for (const branch of ['main', 'master']) {
-          const apiUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
-          const res = await fetch(apiUrl);
-          if (!res.ok) continue;
-          const data = await res.json();
-          if (data && Array.isArray(data.tree)) {
-            const matched = data.tree
-              .filter(item => item.type === 'blob' && item.path.startsWith('data/') && SUPPORTED_EXT_REGEX.test(item.path))
-              .map(item => item.path.replace(/^data\//, ''))
-              .filter(rel => rel.toLowerCase() !== 'manifest.json');
-            if (matched.length > 0) return matched;
-          }
-        }
-      } catch (err) {
-        // Bỏ qua nếu không phải GitHub Pages hoặc bị giới hạn rate limit
-      }
-      return null;
-    }
-
-    // Phương pháp C: Phân tích trang Directory Listing HTML của Apache / Nginx / LiteSpeed
-    async function extractDirectoryLinks(dirUrl) {
-      const res = await fetch(`${dirUrl}?t=${Date.now()}`, { cache: 'no-store' });
-      if (!res.ok) return { dirs: [], files: [] };
-      const contentType = res.headers.get('content-type') || '';
-      if (!contentType.includes('text/html')) return { dirs: [], files: [] };
-
-      const html = await res.text();
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
-      const anchors = Array.from(doc.querySelectorAll('a[href]'));
-      const dirs = [];
-      const files = [];
-
-      for (const a of anchors) {
-        const href = a.getAttribute('href') || '';
-        if (!href || href.startsWith('?') || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('javascript:')) continue;
-        if (href === '../' || href === './' || href === '/') continue;
-
-        let cleanHref = href.split('?')[0].split('#')[0];
-        if (cleanHref.startsWith('http://') || cleanHref.startsWith('https://')) {
-          try {
-            const u = new URL(cleanHref);
-            if (u.origin !== window.location.origin) continue;
-            cleanHref = u.pathname;
-          } catch (e) {
-            continue;
-          }
-        }
-
-        const decoded = decodeURIComponent(cleanHref);
-        const trimmed = decoded.replace(/^\/+/, '');
-        if (!trimmed || trimmed.endsWith('..')) continue;
-
-        if (decoded.endsWith('/')) {
-          const folderName = trimmed.split('/').filter(Boolean).pop();
-          if (folderName && folderName !== 'data') {
-            dirs.push(folderName);
-          }
-        } else {
-          const fileName = trimmed.split('/').pop();
-          if (fileName && SUPPORTED_EXT_REGEX.test(fileName) && fileName.toLowerCase() !== 'manifest.json') {
-            files.push(fileName);
-          }
-        }
-      }
-
-      return {
-        dirs: Array.from(new Set(dirs)),
-        files: Array.from(new Set(files))
-      };
-    }
-
-    async function tryFetchDirectoryListingPaths() {
-      try {
-        const rootListing = await extractDirectoryLinks('data/');
-        const discovered = [];
-
-        rootListing.files.forEach(f => discovered.push(f));
-
-        for (const subDir of rootListing.dirs) {
-          const subListing = await extractDirectoryLinks(`data/${encodeURIComponent(subDir)}/`);
-          subListing.files.forEach(f => discovered.push(`${subDir}/${f}`));
-        }
-
-        if (discovered.length > 0) return discovered;
-      } catch (err) {
-        // Hosting không bật directory listing
-      }
-      return null;
-    }
-
-    async function loadDataFromHosting(showFeedbackToast = false) {
-      if (dom.dataSourceSubtitle) {
-        dom.dataSourceSubtitle.textContent = 'Đang quét thư mục data/...';
-      }
-
-      let relativeFilePaths = await tryFetchManifestPaths();
-      if (!relativeFilePaths || relativeFilePaths.length === 0) {
-        relativeFilePaths = await tryFetchGitHubPagesDataPaths();
-      }
-      if (!relativeFilePaths || relativeFilePaths.length === 0) {
-        relativeFilePaths = await tryFetchDirectoryListingPaths();
-      }
-
-      if (relativeFilePaths && relativeFilePaths.length > 0) {
-        // Sắp xếp đường dẫn tự nhiên để đúng thứ tự Chương 1 -> Chương 2 -> Chương 10
-        relativeFilePaths.sort(naturalCompare);
-        const groupedMap = new Map();
-
-        for (const relPath of relativeFilePaths) {
-          const normalizedPath = relPath.replace(/^\/+/, '').replace(/^data\//i, '');
-          const segments = normalizedPath.split('/').filter(Boolean);
-          if (segments.length === 0) continue;
-
-          const fileName = segments[segments.length - 1];
-          const folderName = segments.length > 1 ? segments[segments.length - 2] : formatPrettyName(fileName);
-          const storyTitle = formatPrettyName(folderName) || 'Truyện trong thư mục data';
-          const chapterTitle = formatPrettyName(fileName) || fileName;
-
-          const encodedUrl = 'data/' + segments.map(seg => encodeURIComponent(seg)).join('/');
-          try {
-            const res = await fetch(`${encodedUrl}?t=${Date.now()}`);
-            if (!res.ok) continue;
-            const buffer = await res.arrayBuffer();
-            const textContent = await parseStoryFileContent(fileName, buffer);
-            if (!textContent) continue;
-
-            const extractedChapters = segments.length === 1
-              ? splitTextIntoChapters(textContent, chapterTitle)
-              : [{ title: chapterTitle, content: textContent }];
-
-            if (!groupedMap.has(storyTitle)) {
-              groupedMap.set(storyTitle, []);
+        dom.authSubmitBtn.onclick = (e) => {
+          e.preventDefault();
+          if (dom.authKeyInput.value === 'Mothaiba@123') {
+            if (dom.authRememberCheckbox.checked) {
+              localStorage.setItem('audio_truyen_auth_v1', 'Mothaiba@123');
             }
-            groupedMap.get(storyTitle).push(...extractedChapters);
-          } catch (err) {
-            // Bỏ qua tệp lỗi lẻ và tiếp tục nạp các chương khác
-          }
-        }
-
-        const loadedStories = [];
-        groupedMap.forEach((chapters, title) => {
-          if (chapters.length > 0) {
-            loadedStories.push({ title, chapters });
-          }
-        });
-
-        state.hostingStories = loadedStories;
-      } else {
-        state.hostingStories = [];
-      }
-
-      rebuildCombinedStoriesLibrary();
-      renderStorySelector();
-
-      const safeStoryIdx = Math.min(state.currentStoryIndex, Math.max(0, state.stories.length - 1));
-      const safeChapIdx = Math.min(state.currentChapterIndex, Math.max(0, (state.stories[safeStoryIdx]?.chapters.length || 1) - 1));
-      loadChapter(safeStoryIdx, safeChapIdx, false, state.currentSentenceIndex);
-
-      if (dom.dataSourceSubtitle) {
-        if (state.hostingStories.length > 0) {
-          const totalChapters = state.hostingStories.reduce((sum, s) => sum + s.chapters.length, 0);
-          dom.dataSourceSubtitle.textContent = `data/: ${state.hostingStories.length} truyện • ${totalChapters} chương`;
-        } else if (state.customStories.length > 0) {
-          dom.dataSourceSubtitle.textContent = `Thư viện đã nạp: ${state.customStories.length} bộ truyện`;
-        } else {
-          dom.dataSourceSubtitle.textContent = 'Sẵn sàng • Đặt truyện vào data/[Tên truyện]/';
-        }
-      }
-
-      if (showFeedbackToast) {
-        if (state.hostingStories.length > 0) {
-          showToast(`Đã cập nhật ${state.hostingStories.length} bộ truyện từ thư mục data/`);
-        } else {
-          showToast('Chưa tìm thấy tệp mới trong data/ (hoặc hosting đang tắt duyệt thư mục).');
-        }
-      }
-    }
-
-    // Nạp hàng loạt tệp từ thư mục [Tên truyện]/ hoặc nhiều tệp Chuong_1.txt, Chuong_2.txt
-    async function handleBatchFilesUpload(fileList, forcedStoryTitle = '') {
-      const files = Array.from(fileList || []).filter(f => SUPPORTED_EXT_REGEX.test(f.name));
-      if (files.length === 0) {
-        showToast('Vui lòng chọn tệp truyện định dạng .txt, .pdf, .md hoặc .json');
-        return;
-      }
-
-      files.sort((a, b) => {
-        const pathA = a.webkitRelativePath || a.name;
-        const pathB = b.webkitRelativePath || b.name;
-        return naturalCompare(pathA, pathB);
-      });
-
-      const grouped = new Map();
-
-      for (const file of files) {
-        const rel = file.webkitRelativePath || '';
-        const parts = rel.split('/').filter(Boolean);
-        let storyName = forcedStoryTitle.trim();
-
-        if (!storyName) {
-          if (parts.length >= 2) {
-            storyName = formatPrettyName(parts[parts.length - 2]);
+            unlockApp();
           } else {
-            storyName = formatPrettyName(file.name);
+            dom.authGateCard.classList.remove('gate-shake');
+            void dom.authGateCard.offsetWidth; // Trigger reflow
+            dom.authGateCard.classList.add('gate-shake');
+            dom.authErrorMsg.classList.remove('hidden');
           }
+        };
+        dom.toggleAuthKeyVisibilityBtn.onclick = () => {
+          const type = dom.authKeyInput.type === 'password' ? 'text' : 'password';
+          dom.authKeyInput.type = type;
+          dom.authEyeOpenIcon.classList.toggle('hidden');
+          dom.authEyeClosedIcon.classList.toggle('hidden');
+        };
+      }
+    }
+
+    function unlockApp() {
+      dom.authGateOverlay.style.opacity = '0';
+      setTimeout(() => dom.authGateOverlay.style.display = 'none', 500);
+      bootApp();
+    }
+
+    // 5. Khởi tạo Ứng dụng
+    async function bootApp() {
+      loadSettings();
+      applySettings();
+      setupEvents();
+      await loadVoices();
+      await loadLibraryData();
+    }
+
+    function loadSettings() {
+      try {
+        const d = JSON.parse(localStorage.getItem('audio_truyen_settings_v3'));
+        if (d) {
+          if (d.theme) state.theme = d.theme;
+          if (d.fontSize) state.fontSize = d.fontSize;
+          if (d.voiceId) state.voiceId = d.voiceId;
+          if (d.rate) state.rate = d.rate;
+          if (d.pitch) state.pitch = d.pitch;
+          if (d.bookmarks) state.bookmarks = d.bookmarks;
         }
+      } catch(e) {}
+    }
 
-        const chapterName = formatPrettyName(file.name) || file.name;
-        try {
-          const buffer = await file.arrayBuffer();
-          const text = await parseStoryFileContent(file.name, buffer);
-          if (!text) continue;
+    function saveSettings() {
+      localStorage.setItem('audio_truyen_settings_v3', JSON.stringify({
+        theme: state.theme, fontSize: state.fontSize,
+        voiceId: state.voiceId, rate: state.rate, pitch: state.pitch,
+        bookmarks: state.bookmarks
+      }));
+    }
 
-          const chapters = (parts.length < 2 && files.length === 1)
-            ? splitTextIntoChapters(text, chapterName)
-            : [{ title: chapterName, content: text }];
+    function applySettings() {
+      document.body.setAttribute('data-theme', state.theme);
+      dom.storyReaderContainer.style.fontSize = state.fontSize + 'px';
+      if (dom.fontSizeIndicator) dom.fontSizeIndicator.textContent = state.fontSize + 'px';
+      
+      dom.speedRangeSlider.value = state.rate;
+      if (dom.speedValueLabel) dom.speedValueLabel.textContent = state.rate.toFixed(2) + 'x';
+      if (dom.mobileSpeedSliderValue) dom.mobileSpeedSliderValue.textContent = state.rate.toFixed(2) + 'x';
+      if (dom.mobileSpeedBadge) dom.mobileSpeedBadge.textContent = state.rate.toFixed(2) + 'x';
+      
+      if (dom.pitchRangeSlider) {
+        dom.pitchRangeSlider.value = state.pitch;
+        dom.pitchValueLabel.textContent = state.pitch.toFixed(2);
+      }
+      
+      if (dom.autoNextChapterCheckbox) dom.autoNextChapterCheckbox.checked = state.autoNext;
+      if (dom.autoScrollCheckbox) dom.autoScrollCheckbox.checked = state.autoScroll;
+    }
 
-          if (!grouped.has(storyName)) {
-            grouped.set(storyName, []);
+    // 6. Quản lý Giọng đọc (TTS Engine)
+    async function loadVoices() {
+      return new Promise(resolve => {
+        let loaded = false;
+        const check = () => {
+          const v = speechSynthesis.getVoices();
+          if (v.length > 0) {
+            state.voices = v;
+            renderVoiceList();
+            loaded = true;
+            resolve();
           }
-          grouped.get(storyName).push(...chapters);
-        } catch (err) {
-          // Bỏ qua tệp lỗi
-        }
-      }
-
-      if (grouped.size === 0) {
-        showToast('Không trích xuất được nội dung văn bản từ các tệp đã chọn.');
-        return;
-      }
-
-      let lastAddedTitle = '';
-      for (const [title, newChapters] of grouped.entries()) {
-        lastAddedTitle = title;
-        const existingCustomIdx = state.customStories.findIndex(s => s.title === title);
-        let mergedStory;
-
-        if (existingCustomIdx >= 0) {
-          const existing = state.customStories[existingCustomIdx];
-          const existingTitles = new Set(existing.chapters.map(c => c.title));
-          const mergedChapters = [...existing.chapters];
-          newChapters.forEach(ch => {
-            if (!existingTitles.has(ch.title)) mergedChapters.push(ch);
-          });
-          mergedStory = { title, chapters: mergedChapters };
-          state.customStories[existingCustomIdx] = mergedStory;
-        } else {
-          mergedStory = { title, chapters: newChapters };
-          state.customStories.push(mergedStory);
-        }
-
-        await saveCustomStoryToDB(mergedStory);
-      }
-
-      rebuildCombinedStoriesLibrary();
-      renderStorySelector();
-
-      const targetIdx = state.stories.findIndex(s => s.title === lastAddedTitle);
-      if (targetIdx >= 0) {
-        loadChapter(targetIdx, 0, false, 0);
-      }
-
-      if (dom.dataSourceSubtitle) {
-        dom.dataSourceSubtitle.textContent = `Thư viện: ${state.stories.length} bộ truyện sẵn sàng`;
-      }
-      showToast(`Đã nạp thành công truyện "${lastAddedTitle}"!`);
-    }
-
-    // =========================================================================
-    // 6. HIỂN THỊ NỘI DUNG TRUYỆN XUỐNG DÒNG & TÁCH CÂU HIGHLIGHT
-    // =========================================================================
-    function splitParagraphIntoSentences(paragraphText) {
-      const cleaned = paragraphText.trim();
-      if (!cleaned) return [];
-
-      // Tách câu theo dấu kết thúc câu tiếng Việt (. ! ? …) nhưng giữ nguyên dấu câu
-      const rawMatches = cleaned.match(/[^.!?…]+(?:[.!?…]+["”’)]*|$)/g);
-      if (!rawMatches) return [cleaned];
-
-      return rawMatches
-        .map(s => s.trim())
-        .filter(s => s.length > 0);
-    }
-
-    function renderStoryParagraphs(rawContent) {
-      dom.storyReaderContainer.innerHTML = '';
-      state.sentences = [];
-      state.sentenceElements = [];
-
-      const normalized = normalizeLineBreaks(rawContent);
-      const paragraphs = normalized
-        .split(/\n+/)
-        .map(p => p.trim())
-        .filter(p => p.length > 0);
-
-      if (paragraphs.length === 0) {
-        const emptyP = document.createElement('p');
-        emptyP.className = 'story-paragraph theme-text-muted italic';
-        emptyP.textContent = 'Chương này chưa có nội dung văn bản.';
-        dom.storyReaderContainer.appendChild(emptyP);
-        return;
-      }
-
-      let globalSentenceIdx = 0;
-
-      paragraphs.forEach((paraText) => {
-        const pEl = document.createElement('p');
-        pEl.className = 'story-paragraph';
-
-        const sentencesInPara = splitParagraphIntoSentences(paraText);
-        sentencesInPara.forEach((sentenceStr, idxInPara) => {
-          const spanEl = document.createElement('span');
-          spanEl.className = 'sentence';
-          spanEl.dataset.sentenceIdx = String(globalSentenceIdx);
-          spanEl.textContent = sentenceStr;
-
-          const capturedIdx = globalSentenceIdx;
-          spanEl.addEventListener('click', () => {
-            jumpToSentenceAndPlay(capturedIdx);
-          });
-
-          pEl.appendChild(spanEl);
-          if (idxInPara < sentencesInPara.length - 1) {
-            pEl.appendChild(document.createTextNode(' '));
-          }
-
-          state.sentences.push(sentenceStr);
-          state.sentenceElements.push(spanEl);
-          globalSentenceIdx++;
-        });
-
-        dom.storyReaderContainer.appendChild(pEl);
+        };
+        check();
+        if (!loaded) speechSynthesis.onvoiceschanged = check;
+        setTimeout(() => { if(!loaded){ renderVoiceList(); resolve(); } }, 1000);
       });
     }
 
-    function updateSentenceHighlight(sentenceIdx, shouldScroll = true) {
-      state.sentenceElements.forEach((el, idx) => {
-        if (idx === sentenceIdx) {
-          el.classList.add('sentence-active');
-        } else {
-          el.classList.remove('sentence-active');
-        }
-      });
-
-      const total = state.sentences.length;
-      const displayIdx = total > 0 ? Math.min(sentenceIdx + 1, total) : 0;
-      const progressText = `Câu ${displayIdx} / ${total}`;
-
-      if (dom.sentenceProgressText) dom.sentenceProgressText.textContent = `• ${progressText}`;
-      if (dom.playerSentenceProgressBadge) dom.playerSentenceProgressBadge.textContent = progressText;
-
-      const percent = total > 0 ? Math.round((displayIdx / total) * 100) : 0;
-      if (dom.readingProgressBar) dom.readingProgressBar.style.width = `${percent}%`;
-
-      if (shouldScroll && state.autoScroll && state.sentenceElements[sentenceIdx]) {
-        state.sentenceElements[sentenceIdx].scrollIntoView({
-          behavior: 'smooth',
-          block: 'center'
-        });
-      }
-
-      updateBookmarkButtonState();
-    }
-
-    // =========================================================================
-    // 7. QUẢN LÝ DANH SÁCH TRUYỆN & CHƯƠNG
-    // =========================================================================
-    function renderStorySelector() {
-      if (!dom.storySelect) return;
-      dom.storySelect.innerHTML = '';
-
-      state.stories.forEach((story, idx) => {
-        const opt = document.createElement('option');
-        opt.value = String(idx);
-        opt.textContent = `${story.title} (${story.chapters.length} chương)`;
-        dom.storySelect.appendChild(opt);
-      });
-
-      dom.storySelect.value = String(state.currentStoryIndex);
-    }
-
-    function renderChapterList() {
-      const story = state.stories[state.currentStoryIndex];
-      if (!story || !dom.chapterListContainer) return;
-
-      const keyword = (dom.chapterSearchInput ? dom.chapterSearchInput.value : '').trim().toLowerCase();
-      const bookmarkedChapterSet = new Set(
-        state.bookmarks
-          .filter(b => b.storyTitle === story.title)
-          .map(b => b.chapterIndex)
-      );
-
-      if (dom.bookmarkedCountBadge) {
-        dom.bookmarkedCountBadge.textContent = String(bookmarkedChapterSet.size);
-      }
-
-      // Cập nhật giao diện 2 nút lọc Tất cả / Đánh dấu
-      const activeBtnStyle = `background-color: var(--accent); color: var(--accent-contrast); border-color: var(--accent);`;
-      const normalBtnStyle = `background-color: var(--bg-elevated); color: var(--text-primary); border-color: var(--border-color);`;
-      if (dom.filterAllChaptersBtn) {
-        dom.filterAllChaptersBtn.setAttribute('style', state.chapterFilterMode === 'all' ? activeBtnStyle : normalBtnStyle);
-      }
-      if (dom.filterBookmarkedChaptersBtn) {
-        dom.filterBookmarkedChaptersBtn.setAttribute('style', state.chapterFilterMode === 'bookmarked' ? activeBtnStyle : normalBtnStyle);
-      }
-
-      dom.chapterListContainer.innerHTML = '';
-      let renderedCount = 0;
-
-      story.chapters.forEach((chap, idx) => {
-        const isCurrent = idx === state.currentChapterIndex;
-        const isBookmarked = bookmarkedChapterSet.has(idx);
-
-        if (state.chapterFilterMode === 'bookmarked' && !isBookmarked) return;
-        if (keyword && !chap.title.toLowerCase().includes(keyword)) return;
-
-        renderedCount++;
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'w-full text-left px-3 py-2.5 rounded-xl text-xs transition flex items-center justify-between gap-2';
-
-        if (isCurrent) {
-          btn.style.backgroundColor = 'var(--accent)';
-          btn.style.color = 'var(--accent-contrast)';
-          btn.classList.add('font-bold', 'shadow-xs');
-        } else {
-          btn.classList.add('hover:opacity-85');
-        }
-
-        const titleSpan = document.createElement('span');
-        titleSpan.className = 'truncate';
-        titleSpan.textContent = `${idx + 1}. ${chap.title}`;
-        btn.appendChild(titleSpan);
-
-        if (isBookmarked) {
-          const star = document.createElement('span');
-          star.className = 'shrink-0 text-[11px]';
-          star.textContent = '★';
-          if (!isCurrent) star.style.color = 'var(--accent)';
-          btn.appendChild(star);
-        }
-
-        btn.addEventListener('click', () => {
-          const wasPlaying = state.isPlaying;
-          loadChapter(state.currentStoryIndex, idx, wasPlaying, 0);
-          closeMobileDrawer();
-        });
-
-        dom.chapterListContainer.appendChild(btn);
-      });
-
-      if (renderedCount === 0) {
-        const emptyMsg = document.createElement('p');
-        emptyMsg.className = 'text-xs theme-text-muted text-center py-6 px-3';
-        emptyMsg.textContent = state.chapterFilterMode === 'bookmarked'
-          ? 'Truyện này chưa có chương nào được đánh dấu.'
-          : 'Không tìm thấy chương phù hợp.';
-        dom.chapterListContainer.appendChild(emptyMsg);
-      }
-    }
-
-    function loadChapter(storyIdx, chapterIdx, autoPlay = false, startSentenceIdx = 0) {
-      stopPlayback();
-
-      const safeStoryIdx = Math.max(0, Math.min(storyIdx, state.stories.length - 1));
-      const story = state.stories[safeStoryIdx];
-      if (!story || !story.chapters || story.chapters.length === 0) return;
-
-      const safeChapterIdx = Math.max(0, Math.min(chapterIdx, story.chapters.length - 1));
-      const chapter = story.chapters[safeChapterIdx];
-
-      state.currentStoryIndex = safeStoryIdx;
-      state.currentChapterIndex = safeChapterIdx;
-
-      if (dom.storySelect) dom.storySelect.value = String(safeStoryIdx);
-      if (dom.storyTitleBadge) dom.storyTitleBadge.textContent = story.title;
-      if (dom.chapterBadge) dom.chapterBadge.textContent = `Chương ${safeChapterIdx + 1} / ${story.chapters.length}`;
-      if (dom.chapterTitleHeading) dom.chapterTitleHeading.textContent = chapter.title;
-      if (dom.mobileChapterCount) dom.mobileChapterCount.textContent = String(story.chapters.length);
-      if (dom.sidebarStatsText) dom.sidebarStatsText.textContent = `${story.chapters.length} chương sẵn sàng`;
-
-      // Cập nhật số chương & tên chương trên thanh điều khiển phát phía dưới
-      if (dom.playerChapterNumberBadge) {
-        dom.playerChapterNumberBadge.textContent = `Chương ${safeChapterIdx + 1} / ${story.chapters.length}`;
-      }
-      if (dom.playerChapterTitleText) {
-        dom.playerChapterTitleText.textContent = chapter.title;
-      }
-
-      // Cập nhật trạng thái vô hiệu hóa nút Chương trước / Chương sau
-      const isFirst = safeChapterIdx === 0;
-      const isLast = safeChapterIdx === story.chapters.length - 1;
-      [dom.prevChapterTopBtn, dom.prevChapterPlayerBtn].forEach(btn => {
-        if (btn) btn.disabled = isFirst;
-      });
-      [dom.nextChapterTopBtn, dom.nextChapterPlayerBtn].forEach(btn => {
-        if (btn) btn.disabled = isLast;
-      });
-
-      renderStoryParagraphs(chapter.content);
-
-      const safeSentenceIdx = Math.max(0, Math.min(startSentenceIdx, Math.max(0, state.sentences.length - 1)));
-      state.currentSentenceIndex = safeSentenceIdx;
-
-      updateSentenceHighlight(safeSentenceIdx, startSentenceIdx > 0);
-      renderChapterList();
-      renderBookmarksUI();
-      saveStateToStorage();
-
-      if (autoPlay && state.sentences.length > 0) {
-        startPlaybackFromSentence(safeSentenceIdx);
-      }
-    }
-
-    // =========================================================================
-    // 8. HỆ THỐNG GIỌNG ĐỌC TIẾNG VIỆT ĐA NGUỒN (CLOUD TTS + WEB SPEECH API)
-    // =========================================================================
-    function populateVietnameseVoices() {
-      const synthVoices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
-      state.availableVoices = synthVoices;
-
-      const viVoices = synthVoices.filter(v => (v.lang || '').toLowerCase().startsWith('vi'));
-      const otherVoices = synthVoices.filter(v => !(v.lang || '').toLowerCase().startsWith('vi'));
-
-      if (dom.noVietnameseVoiceNotice) {
-        dom.noVietnameseVoiceNotice.classList.toggle('hidden', viVoices.length > 0);
-      }
-
+    function renderVoiceList() {
       if (!dom.voiceSelect) return;
-      const previousSelected = state.selectedVoiceId;
-      dom.voiceSelect.innerHTML = '';
-
-      // 1. Giọng Online Cloud Tiếng Việt tích hợp sẵn (luôn hoạt động trên mọi thiết bị)
-      const cloudOpt = document.createElement('option');
-      cloudOpt.value = 'cloud:vi-female';
-      cloudOpt.textContent = '[Online Cloud] Giọng Nữ Tiếng Việt Chuẩn';
-      dom.voiceSelect.appendChild(cloudOpt);
-
-      // 2. Các giọng Tiếng Việt cài trên máy / trình duyệt
-      viVoices.forEach(v => {
-        const opt = document.createElement('option');
-        opt.value = `synth:${v.name}`;
-        let prefix = '[Hệ thống]';
-        if (/natural|online|hoaimy|namminh/i.test(v.name)) prefix = '[AI Tự nhiên]';
-        else if (/google/i.test(v.name)) prefix = '[Google]';
-        opt.textContent = `${prefix} ${v.name}`;
-        dom.voiceSelect.appendChild(opt);
-      });
-
-      // 3. Giọng đa ngôn ngữ khác (nếu người dùng bật checkbox)
-      if (state.showAllLanguages && otherVoices.length > 0) {
-        const sep = document.createElement('option');
-        sep.disabled = true;
-        sep.textContent = '── Giọng đa ngôn ngữ khác ──';
-        dom.voiceSelect.appendChild(sep);
-
-        otherVoices.forEach(v => {
+      dom.voiceSelect.innerHTML = `<option value="cloud:vi-female">[Online Cloud] Giọng Nữ Google Tiếng Việt</option>`;
+      state.voices.forEach(v => {
+        if (v.lang.includes('vi') || state.showAllLanguages) {
+          let label = v.name;
+          if (v.name.includes('HoaiMy')) label = '[AI Tự nhiên] Microsoft HoaiMy (Nữ)';
+          else if (v.name.includes('NamMinh')) label = '[AI Tự nhiên] Microsoft NamMinh (Nam)';
+          else if (v.name.toLowerCase().includes('google')) label = `[Google] ${v.name}`;
           const opt = document.createElement('option');
-          opt.value = `synth:${v.name}`;
-          opt.textContent = `[${v.lang}] ${v.name}`;
+          opt.value = 'synth:' + v.name;
+          opt.textContent = label;
           dom.voiceSelect.appendChild(opt);
-        });
-      }
-
-      // Khôi phục lựa chọn giọng đọc nếu còn tồn tại, ngược lại ưu tiên giọng AI HoaiMy hoặc Cloud
-      const optionValues = Array.from(dom.voiceSelect.options).map(o => o.value);
-      if (optionValues.includes(previousSelected)) {
-        dom.voiceSelect.value = previousSelected;
+        }
+      });
+      if ([...dom.voiceSelect.options].some(o => o.value === state.voiceId)) {
+        dom.voiceSelect.value = state.voiceId;
       } else {
-        const aiHoaiMy = optionValues.find(val => /hoaimy|natural/i.test(val));
-        state.selectedVoiceId = aiHoaiMy || 'cloud:vi-female';
-        dom.voiceSelect.value = state.selectedVoiceId;
+        dom.voiceSelect.value = 'cloud:vi-female';
+        state.voiceId = 'cloud:vi-female';
       }
     }
 
-    function splitSentenceForCloudTts(text, maxLen = 180) {
-      const clean = String(text || '').trim();
-      if (!clean) return [];
-      if (clean.length <= maxLen) return [clean];
-
-      const chunks = [];
-      const subParts = clean.split(/(?<=[,;:])\s+/);
-      let current = '';
-
-      for (const part of subParts) {
-        if ((current + ' ' + part).trim().length <= maxLen) {
-          current = (current + ' ' + part).trim();
+    function splitSentence(text, max = 180) {
+      const result = [];
+      const parts = text.split(/([.,!?;\n]+)/);
+      let curr = '';
+      for (let p of parts) {
+        if ((curr + p).length > max && curr.trim().length > 0) {
+          result.push(curr.trim());
+          curr = p;
         } else {
-          if (current) chunks.push(current);
-          if (part.length <= maxLen) {
-            current = part;
-          } else {
-            const words = part.split(/\s+/);
-            let wordLine = '';
-            for (const w of words) {
-              if ((wordLine + ' ' + w).trim().length <= maxLen) {
-                wordLine = (wordLine + ' ' + w).trim();
-              } else {
-                if (wordLine) chunks.push(wordLine);
-                wordLine = w;
-              }
-            }
-            current = wordLine;
-          }
+          curr += p;
         }
       }
-      if (current) chunks.push(current);
-      return chunks;
+      if (curr.trim()) result.push(curr.trim());
+      return result;
     }
 
-    function buildGoogleTtsUrl(chunkText) {
-      const encoded = encodeURIComponent(chunkText);
-      return `https://translate.googleapis.com/translate_tts?ie=UTF-8&client=tw-ob&tl=vi&q=${encoded}`;
-    }
-
-    function playCloudAudioChunk(chunkText, sessionId) {
-      return new Promise((resolve, reject) => {
-        if (sessionId !== state.playbackSessionId) {
-          resolve('cancelled');
-          return;
-        }
-
-        const url = buildGoogleTtsUrl(chunkText);
-        const audio = new Audio();
-        audio.crossOrigin = 'anonymous';
-        audio.src = url;
-        audio.playbackRate = state.rate;
-        state.cloudAudioElement = audio;
-
-        let settled = false;
-        const finish = (fn, arg) => {
-          if (settled) return;
-          settled = true;
-          audio.onended = null;
-          audio.onerror = null;
-          if (state.cloudAudioElement === audio) {
-            state.cloudAudioElement = null;
+    async function speakText(text, sessionId) {
+      if (state.voiceId === 'cloud:vi-female') {
+        const chunks = splitSentence(text, 180);
+        for (let chunk of chunks) {
+          if (sessionId !== state.playbackSessionId) return 'cancelled';
+          try {
+            await new Promise((res, rej) => {
+              const audio = state.cloudAudio;
+              audio.src = `https://translate.googleapis.com/translate_tts?ie=UTF-8&client=tw-ob&tl=vi&q=${encodeURIComponent(chunk)}`;
+              audio.playbackRate = state.rate;
+              audio.onended = () => res();
+              audio.onerror = () => rej(new Error('Cloud TTS failed'));
+              audio.play().catch(rej);
+            });
+          } catch(e) {
+            return await synthFallback(text, sessionId);
           }
-          fn(arg);
-        };
-
-        audio.onended = () => finish(resolve, 'ended');
-        audio.onerror = () => finish(reject, new Error('Cloud TTS stream error'));
-
-        audio.play().catch(err => finish(reject, err));
-      });
-    }
-
-    function speakWithWebSpeechApi(text, sessionId) {
-      return new Promise((resolve, reject) => {
-        if (!window.speechSynthesis) {
-          reject(new Error('Trình duyệt không hỗ trợ SpeechSynthesis'));
-          return;
         }
-        if (sessionId !== state.playbackSessionId) {
-          resolve('cancelled');
-          return;
-        }
-
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'vi-VN';
-        utterance.rate = state.rate;
-        utterance.pitch = state.pitch;
-
-        if (state.selectedVoiceId.startsWith('synth:')) {
-          const targetName = state.selectedVoiceId.slice(6);
-          const matchedVoice = state.availableVoices.find(v => v.name === targetName);
-          if (matchedVoice) {
-            utterance.voice = matchedVoice;
-            utterance.lang = matchedVoice.lang || 'vi-VN';
-          }
-        } else {
-          const fallbackVi = state.availableVoices.find(v => (v.lang || '').toLowerCase().startsWith('vi'));
-          if (fallbackVi) utterance.voice = fallbackVi;
-        }
-
-        utterance.onend = () => resolve('ended');
-        utterance.onerror = (ev) => {
-          if (ev && (ev.error === 'interrupted' || ev.error === 'canceled')) {
-            resolve('cancelled');
-          } else {
-            reject(new Error('SpeechSynthesis error'));
-          }
-        };
-
-        window.speechSynthesis.speak(utterance);
-      });
-    }
-
-    async function speakSingleSentence(text, sessionId) {
-      if (state.selectedVoiceId === 'cloud:vi-female') {
-        const chunks = splitSentenceForCloudTts(text, 180);
-        try {
-          for (const chunk of chunks) {
-            if (sessionId !== state.playbackSessionId) return 'cancelled';
-            const status = await playCloudAudioChunk(chunk, sessionId);
-            if (status === 'cancelled') return 'cancelled';
-          }
-          return 'ended';
-        } catch (err) {
-          // Tự động chuyển dự phòng sang giọng trình duyệt nếu mất mạng hoặc bị chặn
-          return await speakWithWebSpeechApi(text, sessionId);
-        }
+        return 'ended';
       } else {
-        return await speakWithWebSpeechApi(text, sessionId);
+        return await synthFallback(text, sessionId);
       }
     }
 
-    function updatePlayPauseUI() {
-      if (!dom.playIcon || !dom.pauseIcon || !dom.playPauseText) return;
-      if (state.isPlaying) {
-        dom.playIcon.classList.add('hidden');
-        dom.pauseIcon.classList.remove('hidden');
-        dom.playPauseText.textContent = 'Tạm dừng';
-      } else {
-        dom.playIcon.classList.remove('hidden');
-        dom.pauseIcon.classList.add('hidden');
-        dom.playPauseText.textContent = state.isPaused ? 'Tiếp tục' : 'Đọc truyện';
-      }
-    }
-
-    function stopPlayback() {
-      state.playbackSessionId++;
-      state.isPlaying = false;
-      state.isPaused = false;
-
-      if (state.cloudAudioElement) {
-        try {
-          state.cloudAudioElement.pause();
-          state.cloudAudioElement.src = '';
-        } catch (e) {}
-        state.cloudAudioElement = null;
-      }
-
-      if (window.speechSynthesis) {
-        try {
-          window.speechSynthesis.cancel();
-        } catch (e) {}
-      }
-
-      updatePlayPauseUI();
-    }
-
-    async function startPlaybackFromSentence(startIdx) {
-      if (state.sentences.length === 0) return;
-
-      stopPlayback();
-      const sessionId = ++state.playbackSessionId;
-      state.isPlaying = true;
-      state.isPaused = false;
-      updatePlayPauseUI();
-
-      let idx = Math.max(0, Math.min(startIdx, state.sentences.length - 1));
-
-      while (idx < state.sentences.length && sessionId === state.playbackSessionId) {
-        state.currentSentenceIndex = idx;
-        updateSentenceHighlight(idx, true);
-        saveStateToStorage();
-
-        try {
-          const result = await speakSingleSentence(state.sentences[idx], sessionId);
-          if (result === 'cancelled' || sessionId !== state.playbackSessionId) {
-            return;
-          }
-        } catch (err) {
-          if (sessionId === state.playbackSessionId) {
-            stopPlayback();
-            showToast('Không thể phát âm thanh trên trình duyệt này. Hãy thử chuyển giọng đọc khác.');
-          }
-          return;
-        }
-
-        idx++;
-      }
-
-      // Đã đọc hết chương hiện tại
-      if (sessionId === state.playbackSessionId) {
-        const story = state.stories[state.currentStoryIndex];
-        if (state.autoNextChapter && story && state.currentChapterIndex + 1 < story.chapters.length) {
-          showToast(`Đang chuyển sang chương ${state.currentChapterIndex + 2}...`);
-          loadChapter(state.currentStoryIndex, state.currentChapterIndex + 1, true, 0);
-        } else {
-          stopPlayback();
-          showToast('Đã đọc xong chương truyện.');
-        }
-      }
-    }
-
-    function jumpToSentenceAndPlay(sentenceIdx) {
-      const safeIdx = Math.max(0, Math.min(sentenceIdx, Math.max(0, state.sentences.length - 1)));
-      startPlaybackFromSentence(safeIdx);
-    }
-
-    // =========================================================================
-    // 9. TÙY CHỈNH GIAO DIỆN ĐỌC, CỠ CHỮ, TỐC ĐỘ, CAO ĐỘ & HẸN GIỜ TẮT
-    // =========================================================================
-    function applyTheme(themeName) {
-      const validThemes = ['light', 'sepia', 'dark'];
-      const chosen = validThemes.includes(themeName) ? themeName : 'sepia';
-      state.theme = chosen;
-      document.body.setAttribute('data-theme', chosen);
-
-      document.querySelectorAll('.theme-choice-btn').forEach(btn => {
-        const isSelected = btn.dataset.themeChoice === chosen;
-        if (isSelected) {
-          btn.style.backgroundColor = 'var(--accent)';
-          btn.style.color = 'var(--accent-contrast)';
-          btn.style.borderColor = 'var(--accent)';
-        } else {
-          btn.style.backgroundColor = 'var(--bg-elevated)';
-          btn.style.color = 'var(--text-primary)';
-          btn.style.borderColor = 'var(--border-color)';
-        }
+    function synthFallback(text, sessionId) {
+      return new Promise((res) => {
+        if (sessionId !== state.playbackSessionId) return res('cancelled');
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.rate = state.rate; 
+        u.pitch = state.pitch;
+        const vId = state.voiceId.replace('synth:', '');
+        const voice = state.voices.find(v => v.name === vId) || state.voices.find(v => v.lang.includes('vi'));
+        if (voice) u.voice = voice;
+        u.onend = () => res('ended');
+        u.onerror = () => res('cancelled');
+        speechSynthesis.speak(u);
+        if (speechSynthesis.paused) speechSynthesis.resume();
       });
-
-      saveStateToStorage();
     }
 
-    function applyFontSize(sizePx) {
-      const clamped = Math.max(15, Math.min(30, Number(sizePx) || 19));
-      state.fontSize = clamped;
-      if (dom.storyReaderContainer) dom.storyReaderContainer.style.fontSize = `${clamped}px`;
-      if (dom.fontSizeIndicator) dom.fontSizeIndicator.textContent = `${clamped}px`;
-      saveStateToStorage();
-    }
-
-    function applySpeed(newRate) {
-      const clamped = Math.max(0.6, Math.min(2.0, Math.round((Number(newRate) || 1.0) * 100) / 100));
-      state.rate = clamped;
-      const label = `${clamped.toFixed(clamped % 1 === 0 ? 1 : 2).replace(/\.00$/, '.0')}x`;
-
-      if (dom.speedValueLabel) dom.speedValueLabel.textContent = label;
-      if (dom.mobileSpeedBadge) dom.mobileSpeedBadge.textContent = label;
-      if (dom.mobileSpeedSliderValue) dom.mobileSpeedSliderValue.textContent = label;
-      if (dom.speedRangeSlider) dom.speedRangeSlider.value = String(clamped);
-      if (dom.mobileSpeedRangeSlider) dom.mobileSpeedRangeSlider.value = String(clamped);
-
-      if (state.cloudAudioElement) {
-        state.cloudAudioElement.playbackRate = clamped;
-      }
-
-      document.querySelectorAll('.speed-preset-btn').forEach(btn => {
-        const btnSpeed = Number(btn.dataset.speed);
-        if (Math.abs(btnSpeed - clamped) < 0.01) {
-          btn.style.backgroundColor = 'var(--accent)';
-          btn.style.color = 'var(--accent-contrast)';
-          btn.style.borderColor = 'var(--accent)';
-        } else {
-          btn.style.backgroundColor = 'transparent';
-          btn.style.color = 'var(--text-primary)';
-          btn.style.borderColor = 'var(--border-color)';
-        }
-      });
-
-      saveStateToStorage();
-    }
-
-    function applyPitch(newPitch, syncPresetSelect = true) {
-      const clamped = Math.max(0.7, Math.min(1.3, Math.round((Number(newPitch) || 1.0) * 100) / 100));
-      state.pitch = clamped;
-      if (dom.pitchRangeSlider) dom.pitchRangeSlider.value = String(clamped);
-      if (dom.pitchValueLabel) dom.pitchValueLabel.textContent = clamped.toFixed(2);
-
-      if (syncPresetSelect && dom.voicePresetSelect) {
-        const matchingOpt = Array.from(dom.voicePresetSelect.options).find(
-          opt => opt.value !== 'custom' && Math.abs(Number(opt.value) - clamped) < 0.01
-        );
-        dom.voicePresetSelect.value = matchingOpt ? matchingOpt.value : 'custom';
-      }
-
-      saveStateToStorage();
-    }
-
-    function configureSleepTimer(minutes) {
-      if (state.sleepTimerInterval) {
-        clearInterval(state.sleepTimerInterval);
-        state.sleepTimerInterval = null;
-      }
-
-      const mins = Number(minutes) || 0;
-      state.sleepTimerMinutes = mins;
-
-      if (mins <= 0) {
-        state.sleepTimerEndTime = 0;
-        if (dom.sleepTimerCountdown) {
-          dom.sleepTimerCountdown.classList.add('hidden');
-          dom.sleepTimerCountdown.textContent = '';
-        }
+    // 7. Logic Đọc / Phát Truyện
+    async function playSentence() {
+      if (!state.isPlaying) return;
+      const sId = state.playbackSessionId;
+      const text = state.sentences[state.currentSentenceIndex];
+      if (!text) {
+        if (state.autoNext) nextChapter();
+        else pause();
         return;
       }
-
-      state.sleepTimerEndTime = Date.now() + mins * 60 * 1000;
-      if (dom.sleepTimerCountdown) dom.sleepTimerCountdown.classList.remove('hidden');
-
-      const updateCountdown = () => {
-        const remainingMs = state.sleepTimerEndTime - Date.now();
-        if (remainingMs <= 0) {
-          clearInterval(state.sleepTimerInterval);
-          state.sleepTimerInterval = null;
-          state.sleepTimerMinutes = 0;
-          if (dom.sleepTimerSelect) dom.sleepTimerSelect.value = '0';
-          if (dom.sleepTimerCountdown) dom.sleepTimerCountdown.classList.add('hidden');
-          stopPlayback();
-          showToast('Đã hết giờ hẹn tắt. Trình đọc đã tự động dừng.');
-          return;
-        }
-        const totalSec = Math.ceil(remainingMs / 1000);
-        const m = Math.floor(totalSec / 60);
-        const s = totalSec % 60;
-        if (dom.sleepTimerCountdown) {
-          dom.sleepTimerCountdown.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-        }
-      };
-
-      updateCountdown();
-      state.sleepTimerInterval = setInterval(updateCountdown, 1000);
-      showToast(`Đã bật hẹn giờ tắt sau ${mins} phút.`);
-    }
-
-    // =========================================================================
-    // 10. QUẢN LÝ MỤC ĐÁNH DẤU CHƯƠNG (BOOKMARKS)
-    // =========================================================================
-    function loadBookmarksFromStorage() {
-      try {
-        const raw = safeStorage.getItem(BOOKMARKS_STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) state.bookmarks = parsed;
-        }
-      } catch (e) {
-        state.bookmarks = [];
+      
+      highlightSentence(state.currentSentenceIndex);
+      const res = await speakText(text, sId);
+      
+      if (res === 'ended' && state.isPlaying && sId === state.playbackSessionId) {
+        state.currentSentenceIndex++;
+        playSentence();
       }
     }
 
-    function saveBookmarksToStorage() {
-      try {
-        safeStorage.setItem(BOOKMARKS_STORAGE_KEY, JSON.stringify(state.bookmarks));
-      } catch (e) {}
+    function play() {
+      if (state.sentences.length === 0) return;
+      state.isPlaying = true;
+      state.playbackSessionId++;
+      dom.playIcon.classList.add('hidden');
+      dom.pauseIcon.classList.remove('hidden');
+      dom.playPauseText.textContent = 'Tạm dừng';
+      playSentence();
+    }
+    
+    function pause() {
+      state.isPlaying = false;
+      state.playbackSessionId++;
+      speechSynthesis.cancel();
+      state.cloudAudio.pause();
+      dom.playIcon.classList.remove('hidden');
+      dom.pauseIcon.classList.add('hidden');
+      dom.playPauseText.textContent = 'Đọc truyện';
+    }
+    
+    function togglePlay() { state.isPlaying ? pause() : play(); }
+
+    function highlightSentence(idx) {
+      document.querySelectorAll('.sentence').forEach(el => el.classList.remove('sentence-active'));
+      const el = document.getElementById(`sen-${idx}`);
+      if (el) {
+        el.classList.add('sentence-active');
+        if (state.autoScroll) el.scrollIntoView({behavior: 'smooth', block: 'center'});
+      }
+      dom.playerSentenceProgressBadge.textContent = `Câu ${idx+1} / ${state.sentences.length}`;
+      dom.sentenceProgressText.textContent = `• Câu ${idx+1} / ${state.sentences.length}`;
+      dom.readingProgressBar.style.width = `${((idx+1)/state.sentences.length)*100}%`;
     }
 
-    function getCurrentChapterBookmark() {
-      const story = state.stories[state.currentStoryIndex];
-      if (!story) return null;
-      return state.bookmarks.find(
-        b => b.storyTitle === story.title && b.chapterIndex === state.currentChapterIndex
-      ) || null;
-    }
-
-    function updateBookmarkButtonState() {
-      const existing = getCurrentChapterBookmark();
-      if (!dom.toggleBookmarkBtn) return;
-
-      if (existing) {
-        dom.toggleBookmarkBtn.style.backgroundColor = 'var(--accent-soft)';
-        dom.toggleBookmarkBtn.style.borderColor = 'var(--accent)';
-        dom.toggleBookmarkBtn.style.color = 'var(--accent)';
-        if (dom.bookmarkOutlineIcon) dom.bookmarkOutlineIcon.classList.add('hidden');
-        if (dom.bookmarkFilledIcon) dom.bookmarkFilledIcon.classList.remove('hidden');
-        if (dom.toggleBookmarkText) dom.toggleBookmarkText.textContent = 'Đã đánh dấu';
-
-        if (dom.updateBookmarkPositionBtn) {
-          if (existing.sentenceIndex !== state.currentSentenceIndex) {
-            dom.updateBookmarkPositionBtn.classList.remove('hidden');
-            dom.updateBookmarkPositionBtn.textContent = `↻ Lưu câu ${state.currentSentenceIndex + 1}`;
-          } else {
-            dom.updateBookmarkPositionBtn.classList.add('hidden');
-          }
-        }
+    function jumpTo(idx) {
+      state.currentSentenceIndex = idx;
+      if (state.isPlaying) {
+        state.playbackSessionId++;
+        playSentence();
       } else {
-        dom.toggleBookmarkBtn.style.backgroundColor = 'var(--bg-elevated)';
-        dom.toggleBookmarkBtn.style.borderColor = 'var(--border-color)';
-        dom.toggleBookmarkBtn.style.color = 'var(--text-primary)';
-        if (dom.bookmarkOutlineIcon) dom.bookmarkOutlineIcon.classList.remove('hidden');
-        if (dom.bookmarkFilledIcon) dom.bookmarkFilledIcon.classList.add('hidden');
-        if (dom.toggleBookmarkText) dom.toggleBookmarkText.textContent = 'Đánh dấu';
-        if (dom.updateBookmarkPositionBtn) dom.updateBookmarkPositionBtn.classList.add('hidden');
+        highlightSentence(idx);
       }
     }
 
-    function toggleCurrentChapterBookmark() {
+    // 8. Tải và Xử lý Nội dung Truyện
+    function loadStory(sIdx, cIdx = 0) {
+      state.currentStoryIndex = sIdx;
+      state.currentChapterIndex = cIdx;
+      renderChapter();
+      renderSidebar();
+      if (state.isPlaying) play();
+    }
+
+    function renderChapter() {
       const story = state.stories[state.currentStoryIndex];
       if (!story) return;
       const chapter = story.chapters[state.currentChapterIndex];
       if (!chapter) return;
 
-      const existingIdx = state.bookmarks.findIndex(
-        b => b.storyTitle === story.title && b.chapterIndex === state.currentChapterIndex
-      );
+      dom.storyTitleBadge.textContent = story.title;
+      dom.chapterBadge.textContent = `Chương ${state.currentChapterIndex + 1} / ${story.chapters.length}`;
+      dom.chapterTitleHeading.textContent = chapter.title;
+      dom.playerChapterNumberBadge.textContent = `Chương ${state.currentChapterIndex + 1} / ${story.chapters.length}`;
+      dom.playerChapterTitleText.textContent = chapter.title;
 
-      if (existingIdx >= 0) {
-        state.bookmarks.splice(existingIdx, 1);
-        showToast('Đã bỏ đánh dấu chương này.');
+      const rawParas = chapter.content.split('\n').filter(p => p.trim().length > 0);
+      let sentenceCounter = 0;
+      state.sentences = [];
+      let html = '';
+
+      rawParas.forEach(p => {
+        const sens = p.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 0);
+        if (sens.length === 0) return;
+        html += `<p class="story-paragraph">`;
+        sens.forEach(s => {
+          state.sentences.push(s.trim());
+          html += `<span class="sentence" id="sen-${sentenceCounter}" onclick="jumpTo(${sentenceCounter})">${s.trim()} </span>`;
+          sentenceCounter++;
+        });
+        html += `</p>`;
+      });
+
+      dom.storyReaderContainer.innerHTML = html;
+      state.currentSentenceIndex = 0;
+      highlightSentence(0);
+    }
+
+    function nextChapter() {
+      const story = state.stories[state.currentStoryIndex];
+      if (state.currentChapterIndex < story.chapters.length - 1) {
+        state.currentChapterIndex++;
+        renderChapter();
+        if (state.isPlaying) play();
       } else {
-        const snippet = (state.sentences[state.currentSentenceIndex] || '').slice(0, 90);
-        state.bookmarks.unshift({
-          id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          storyTitle: story.title,
-          chapterIndex: state.currentChapterIndex,
-          chapterTitle: chapter.title,
-          sentenceIndex: state.currentSentenceIndex,
-          snippet,
-          savedAt: Date.now()
-        });
-        showToast(`Đã đánh dấu "${chapter.title}" (Câu ${state.currentSentenceIndex + 1}).`);
+        pause();
       }
-
-      saveBookmarksToStorage();
-      updateBookmarkButtonState();
-      renderChapterList();
-      renderBookmarksUI();
+    }
+    
+    function prevChapter() {
+      if (state.currentChapterIndex > 0) {
+        state.currentChapterIndex--;
+        renderChapter();
+        if (state.isPlaying) play();
+      }
     }
 
-    function updateCurrentBookmarkPosition() {
-      const existing = getCurrentChapterBookmark();
-      if (!existing) return;
-      existing.sentenceIndex = state.currentSentenceIndex;
-      existing.snippet = (state.sentences[state.currentSentenceIndex] || '').slice(0, 90);
-      existing.savedAt = Date.now();
+    function renderSidebar() {
+      dom.storySelect.innerHTML = state.stories.map((s, i) => `<option value="${i}">${s.title}</option>`).join('');
+      dom.storySelect.value = state.currentStoryIndex;
 
-      saveBookmarksToStorage();
-      updateBookmarkButtonState();
-      renderBookmarksUI();
-      showToast(`Đã cập nhật vị trí dấu trang tại câu ${state.currentSentenceIndex + 1}.`);
-    }
+      const story = state.stories[state.currentStoryIndex];
+      dom.sidebarStatsText.textContent = `${story.chapters.length} chương sẵn sàng`;
 
-    function jumpToBookmark(bookmarkItem, autoPlay = true) {
-      const targetStoryIdx = state.stories.findIndex(s => s.title === bookmarkItem.storyTitle);
-      if (targetStoryIdx < 0) {
-        showToast('Bộ truyện của dấu trang này hiện chưa có trong danh sách.');
-        return;
-      }
-      loadChapter(targetStoryIdx, bookmarkItem.chapterIndex, autoPlay, bookmarkItem.sentenceIndex || 0);
-      dom.bookmarksModal.classList.add('hidden');
-      closeMobileDrawer();
-    }
-
-    function renderBookmarksUI() {
-      const totalBookmarks = state.bookmarks.length;
-      if (dom.headerBookmarkCountBadge) dom.headerBookmarkCountBadge.textContent = String(totalBookmarks);
-      if (dom.bookmarksModalSubtitle) {
-        dom.bookmarksModalSubtitle.textContent = `Tổng cộng ${totalBookmarks} chương đã đánh dấu`;
-      }
-
-      // 1. Render danh sách thu gọn ngay trên thanh bên (Sidebar) cho truyện hiện tại
-      const currentStory = state.stories[state.currentStoryIndex];
-      const currentStoryBookmarks = currentStory
-        ? state.bookmarks.filter(b => b.storyTitle === currentStory.title)
-        : [];
-
-      if (dom.sidebarBookmarkCountBadge) {
-        dom.sidebarBookmarkCountBadge.textContent = String(currentStoryBookmarks.length);
-      }
-
-      if (dom.sidebarBookmarkList) {
-        dom.sidebarBookmarkList.innerHTML = '';
-        if (currentStoryBookmarks.length === 0) {
-          const empty = document.createElement('p');
-          empty.className = 'text-[11px] theme-text-muted px-2 py-1.5';
-          empty.textContent = 'Chưa có chương đánh dấu ở truyện này.';
-          dom.sidebarBookmarkList.appendChild(empty);
-        } else {
-          currentStoryBookmarks.forEach(bm => {
-            const itemBtn = document.createElement('button');
-            itemBtn.type = 'button';
-            itemBtn.className = 'w-full text-left px-2.5 py-2 rounded-xl theme-surface border text-[11px] transition hover:opacity-85 space-y-0.5';
-            itemBtn.innerHTML = `
-              <div class="font-bold truncate" style="color: var(--accent);">★ ${bm.chapterTitle}</div>
-              <div class="theme-text-muted truncate">Câu ${bm.sentenceIndex + 1}${bm.snippet ? ` • ${bm.snippet}` : ''}</div>
-            `;
-            itemBtn.addEventListener('click', () => jumpToBookmark(bm, true));
-            dom.sidebarBookmarkList.appendChild(itemBtn);
-          });
-        }
-      }
-
-      // 2. Render danh sách chi tiết trong Modal Quản lý Mục đánh dấu
-      if (!dom.bookmarksModalList) return;
-
-      const activeScopeStyle = `background-color: var(--accent); color: var(--accent-contrast); border-color: var(--accent);`;
-      const normalScopeStyle = `background-color: var(--bg-elevated); color: var(--text-primary); border-color: var(--border-color);`;
-      if (dom.bookmarkScopeAllBtn) {
-        dom.bookmarkScopeAllBtn.setAttribute('style', state.bookmarkModalScope === 'all' ? activeScopeStyle : normalScopeStyle);
-      }
-      if (dom.bookmarkScopeCurrentBtn) {
-        dom.bookmarkScopeCurrentBtn.setAttribute('style', state.bookmarkModalScope === 'current' ? activeScopeStyle : normalScopeStyle);
-      }
-
-      const filteredBookmarks = state.bookmarkModalScope === 'current' && currentStory
-        ? state.bookmarks.filter(b => b.storyTitle === currentStory.title)
-        : state.bookmarks;
-
-      dom.bookmarksModalList.innerHTML = '';
-
-      if (filteredBookmarks.length === 0) {
-        const emptyBox = document.createElement('div');
-        emptyBox.className = 'text-center py-10 space-y-2';
-        emptyBox.innerHTML = `
-          <p class="text-sm font-semibold">Chưa có chương nào được đánh dấu</p>
-          <p class="text-xs theme-text-muted">Bấm nút <strong>Đánh dấu</strong> (hoặc nhấn phím <strong>B</strong>) khi đang đọc để lưu nhanh chương và vị trí câu.</p>
-        `;
-        dom.bookmarksModalList.appendChild(emptyBox);
-        return;
-      }
-
-      filteredBookmarks.forEach(bm => {
-        const card = document.createElement('div');
-        card.className = 'p-3.5 rounded-2xl theme-elevated border flex flex-col sm:flex-row sm:items-center justify-between gap-3';
-
-        const infoDiv = document.createElement('div');
-        infoDiv.className = 'min-w-0 space-y-1';
-        infoDiv.innerHTML = `
-          <div class="flex flex-wrap items-center gap-1.5">
-            <span class="px-2 py-0.5 rounded-md text-[11px] font-semibold" style="background-color: var(--accent-soft); color: var(--accent);">${bm.storyTitle}</span>
-            <span class="text-[11px] font-medium theme-text-muted">Vị trí: Câu ${(bm.sentenceIndex || 0) + 1}</span>
-          </div>
-          <h4 class="font-bold text-xs sm:text-sm truncate">${bm.chapterTitle}</h4>
-          ${bm.snippet ? `<p class="text-xs theme-text-secondary line-clamp-2 italic">"${bm.snippet}..."</p>` : ''}
-        `;
-
-        const actionsDiv = document.createElement('div');
-        actionsDiv.className = 'flex items-center gap-2 shrink-0';
-
-        const playBtn = document.createElement('button');
-        playBtn.type = 'button';
-        playBtn.className = 'px-3.5 py-2 rounded-xl font-bold text-xs shadow-xs transition active:scale-95';
-        playBtn.style.backgroundColor = 'var(--accent)';
-        playBtn.style.color = 'var(--accent-contrast)';
-        playBtn.textContent = '▶ Nghe tiếp';
-        playBtn.addEventListener('click', () => jumpToBookmark(bm, true));
-
-        const deleteBtn = document.createElement('button');
-        deleteBtn.type = 'button';
-        deleteBtn.className = 'px-3 py-2 rounded-xl theme-surface border text-xs font-semibold text-red-600 dark:text-red-400 hover:opacity-85';
-        deleteBtn.textContent = 'Xóa';
-        deleteBtn.addEventListener('click', () => {
-          state.bookmarks = state.bookmarks.filter(item => item.id !== bm.id);
-          saveBookmarksToStorage();
-          updateBookmarkButtonState();
-          renderChapterList();
-          renderBookmarksUI();
-          showToast('Đã xóa dấu trang.');
-        });
-
-        actionsDiv.appendChild(playBtn);
-        actionsDiv.appendChild(deleteBtn);
-
-        card.appendChild(infoDiv);
-        card.appendChild(actionsDiv);
-        dom.bookmarksModalList.appendChild(card);
+      let html = '';
+      story.chapters.forEach((c, i) => {
+        const isSel = i === state.currentChapterIndex;
+        html += `<button onclick="loadStory(${state.currentStoryIndex}, ${i})" class="w-full text-left px-3 py-2.5 rounded-xl border text-sm transition ${isSel ? 'border-[var(--accent)] font-bold' : 'border-transparent hover:bg-[var(--bg-hover)]'}">${c.title}</button>`;
       });
+      dom.chapterListContainer.innerHTML = html;
+      dom.mobileChapterCount.textContent = story.chapters.length;
     }
 
-    // =========================================================================
-    // 11. LƯU & KHÔI PHỤC TRẠNG THÁI ĐỌC + ĐIỀU KHIỂN DRAWER MOBILE
-    // =========================================================================
-    function saveStateToStorage() {
-      const currentStory = state.stories[state.currentStoryIndex];
-      const payload = {
-        storyTitle: currentStory ? currentStory.title : '',
-        chapterIndex: state.currentChapterIndex,
-        sentenceIndex: state.currentSentenceIndex,
-        rate: state.rate,
-        pitch: state.pitch,
-        selectedVoiceId: state.selectedVoiceId,
-        fontSize: state.fontSize,
-        theme: state.theme,
-        autoNextChapter: state.autoNextChapter,
-        autoScroll: state.autoScroll
+    async function loadLibraryData() {
+      // Dữ liệu mẫu ban đầu để sử dụng ngay mà không cần Data/
+      state.stories = [
+        {
+          title: 'Truyện Mẫu: Khu Vườn Ánh Trăng',
+          chapters: [
+            {
+              title: 'Chương 1: Tiếng chuông gió bên hiên nhà',
+              content: 'Đêm cuối thu, làn sương mỏng nhẹ nhàng phủ xuống con ngõ nhỏ dẫn vào khu vườn cổ sau lưng đồi.\nTrên hiên gỗ cũ kỹ, chiếc chuông gió bằng đồng khẽ ngân lên những thanh âm trong trẻo mỗi khi có làn gió thu lướt qua.\nMinh ngồi bên bàn trà ấm, lật mở từng trang cuốn sổ tay bìa da mà ông nội để lại trước chuyến đi xa.'
+            },
+            {
+              title: 'Chương 2: Ánh sáng dưới tán long não',
+              content: 'Nửa đêm, ánh trăng rằm vằng vặc soi sáng khoảng sân rải sỏi trắng xóa như mặt hồ tĩnh lặng.\nTừ gốc cây long não già, những đốm sáng nhỏ li ti bỗng bay lên, lượn vòng quanh như những chiếc đèn lồng tí hon.'
+            }
+          ]
+        }
+      ];
+      loadStory(0, 0);
+    }
+
+    // 9. Cài đặt các Sự kiện Giao diện (Event Listeners)
+    function setupEvents() {
+      // Điều khiển Playback
+      dom.playPauseBtn.onclick = togglePlay;
+      dom.nextSentenceBtn.onclick = () => { if(state.currentSentenceIndex < state.sentences.length-1) jumpTo(state.currentSentenceIndex+1); };
+      dom.prevSentenceBtn.onclick = () => { if(state.currentSentenceIndex > 0) jumpTo(state.currentSentenceIndex-1); };
+      dom.nextChapterPlayerBtn.onclick = nextChapter;
+      dom.prevChapterPlayerBtn.onclick = prevChapter;
+      dom.nextChapterTopBtn.onclick = nextChapter;
+      dom.prevChapterTopBtn.onclick = prevChapter;
+
+      dom.storySelect.onchange = (e) => loadStory(parseInt(e.target.value), 0);
+
+      // Cài đặt Giao diện
+      document.querySelectorAll('.theme-choice-btn').forEach(b => {
+        b.onclick = () => { state.theme = b.dataset.themeChoice; applySettings(); saveSettings(); };
+      });
+      dom.increaseFontBtn.onclick = () => { state.fontSize += 1; applySettings(); saveSettings(); };
+      dom.decreaseFontBtn.onclick = () => { state.fontSize = Math.max(12, state.fontSize - 1); applySettings(); saveSettings(); };
+
+      const updateSpeed = (val) => { state.rate = parseFloat(val); applySettings(); saveSettings(); };
+      dom.speedRangeSlider.oninput = (e) => updateSpeed(e.target.value);
+      if(dom.mobileSpeedRangeSlider) dom.mobileSpeedRangeSlider.oninput = (e) => updateSpeed(e.target.value);
+      
+      const updatePitch = (val) => { state.pitch = parseFloat(val); applySettings(); saveSettings(); };
+      if(dom.pitchRangeSlider) dom.pitchRangeSlider.oninput = (e) => updatePitch(e.target.value);
+
+      if(dom.autoNextChapterCheckbox) dom.autoNextChapterCheckbox.onchange = (e) => { state.autoNext = e.target.checked; applySettings(); saveSettings(); };
+      if(dom.autoScrollCheckbox) dom.autoScrollCheckbox.onchange = (e) => { state.autoScroll = e.target.checked; applySettings(); saveSettings(); };
+
+      if(dom.voiceSelect) dom.voiceSelect.onchange = (e) => { state.voiceId = e.target.value; saveSettings(); };
+
+      // Ngăn kéo Mobile (Sidebar Drawer)
+      dom.toggleDrawerBtn.onclick = () => { dom.chapterSidebar.classList.remove('hidden'); dom.mobileSidebarBackdrop.classList.remove('hidden'); };
+      dom.closeDrawerBtn.onclick = () => { dom.chapterSidebar.classList.add('hidden'); dom.mobileSidebarBackdrop.classList.add('hidden'); };
+      dom.mobileSidebarBackdrop.onclick = dom.closeDrawerBtn;
+
+      // Đóng/Mở các Modal phụ trợ
+      const toggleModal = (modal, show) => { if (show) modal.classList.remove('hidden'); else modal.classList.add('hidden'); };
+      
+      if(dom.openHelpModalBtn) dom.openHelpModalBtn.onclick = () => toggleModal(dom.helpModal, true);
+      if(dom.closeHelpModalBtn) dom.closeHelpModalBtn.onclick = () => toggleModal(dom.helpModal, false);
+      
+      if(dom.openQuickAddModalBtn) dom.openQuickAddModalBtn.onclick = () => toggleModal(dom.quickAddStoryModal, true);
+      if(dom.closeQuickAddModalBtn) dom.closeQuickAddModalBtn.onclick = () => toggleModal(dom.quickAddStoryModal, false);
+      
+      if(dom.openBookmarksModalBtn) dom.openBookmarksModalBtn.onclick = () => toggleModal(dom.bookmarksModal, true);
+      if(dom.closeBookmarksModalBtn) dom.closeBookmarksModalBtn.onclick = () => toggleModal(dom.bookmarksModal, false);
+      
+      if(dom.voiceTipsBtn) dom.voiceTipsBtn.onclick = () => toggleModal(dom.voiceTipsModal, true);
+      if(dom.closeVoiceTipsModalBtn) dom.closeVoiceTipsModalBtn.onclick = () => toggleModal(dom.voiceTipsModal, false);
+
+      // Phím tắt bàn phím
+      window.onkeydown = (e) => {
+        if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          togglePlay();
+        }
       };
-      safeStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     }
 
-    function restoreStateFromStorage() {
-      try {
-        const raw = safeStorage.getItem(STORAGE_KEY);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        if (parsed.rate) state.rate = parsed.rate;
-        if (parsed.pitch) state.pitch = parsed.pitch;
-        if (parsed.selectedVoiceId) state.selectedVoiceId = parsed.selectedVoiceId;
-        if (parsed.fontSize) state.fontSize = parsed.fontSize;
-        if (parsed.theme) state.theme = parsed.theme;
-        if (typeof parsed.autoNextChapter === 'boolean') {
-          state.autoNextChapter = parsed.autoNextChapter;
-          if (dom.autoNextChapterCheckbox) dom.autoNextChapterCheckbox.checked = parsed.autoNextChapter;
-        }
-        if (typeof parsed.autoScroll === 'boolean') {
-          state.autoScroll = parsed.autoScroll;
-          if (dom.autoScrollCheckbox) dom.autoScrollCheckbox.checked = parsed.autoScroll;
-        }
-        return parsed;
-      } catch (e) {
-        return null;
-      }
-    }
-
-    function openMobileDrawer() {
-      if (!dom.chapterSidebar || !dom.mobileSidebarBackdrop) return;
-      dom.chapterSidebar.classList.remove('hidden');
-      dom.chapterSidebar.classList.add('fixed', 'inset-y-0', 'left-0', 'z-50', 'flex', 'rounded-none', 'rounded-r-2xl', 'h-[100dvh]');
-      dom.mobileSidebarBackdrop.classList.remove('hidden');
-    }
-
-    function closeMobileDrawer() {
-      if (!dom.chapterSidebar || !dom.mobileSidebarBackdrop) return;
-      dom.chapterSidebar.classList.add('hidden');
-      dom.chapterSidebar.classList.remove('fixed', 'inset-y-0', 'left-0', 'z-50', 'rounded-none', 'rounded-r-2xl', 'h-[100dvh]');
-      dom.mobileSidebarBackdrop.classList.add('hidden');
-    }
-
-    function syncMainContentBottomPadding() {
-      if (!dom.mainContentWrapper || !dom.audioPlayerFooter) return;
-      const footerHeight = dom.audioPlayerFooter.offsetHeight || 150;
-      dom.mainContentWrapper.style.paddingBottom = `${footerHeight + 24}px`;
-    }
-
-    // =========================================================================
-    // 12. ĐĂNG KÝ TOÀN BỘ SỰ KIỆN TƯƠNG TÁC NGƯỜI DÙNG
-    // =========================================================================
-    function initEventListeners() {
-      // Nút Play / Pause trung tâm
-      if (dom.playPauseBtn) {
-        dom.playPauseBtn.addEventListener('click', () => {
-          if (state.isPlaying) {
-            stopPlayback();
-            state.isPaused = true;
-            updatePlayPauseUI();
-          } else {
-            startPlaybackFromSentence(state.currentSentenceIndex);
-          }
-        });
-      }
-
-      // Chuyển câu trước / câu sau
-      if (dom.prevSentenceBtn) {
-        dom.prevSentenceBtn.addEventListener('click', () => {
-          const prevIdx = Math.max(0, state.currentSentenceIndex - 1);
-          if (state.isPlaying) startPlaybackFromSentence(prevIdx);
-          else {
-            state.currentSentenceIndex = prevIdx;
-            updateSentenceHighlight(prevIdx, true);
-          }
-        });
-      }
-
-      if (dom.nextSentenceBtn) {
-        dom.nextSentenceBtn.addEventListener('click', () => {
-          const nextIdx = Math.min(Math.max(0, state.sentences.length - 1), state.currentSentenceIndex + 1);
-          if (state.isPlaying) startPlaybackFromSentence(nextIdx);
-          else {
-            state.currentSentenceIndex = nextIdx;
-            updateSentenceHighlight(nextIdx, true);
-          }
-        });
-      }
-
-      // Chuyển chương trước / chương sau
-      [dom.prevChapterTopBtn, dom.prevChapterPlayerBtn].forEach(btn => {
-        if (btn) {
-          btn.addEventListener('click', () => {
-            if (state.currentChapterIndex > 0) {
-              loadChapter(state.currentStoryIndex, state.currentChapterIndex - 1, state.isPlaying, 0);
-            }
-          });
-        }
-      });
-
-      [dom.nextChapterTopBtn, dom.nextChapterPlayerBtn].forEach(btn => {
-        if (btn) {
-          btn.addEventListener('click', () => {
-            const story = state.stories[state.currentStoryIndex];
-            if (story && state.currentChapterIndex + 1 < story.chapters.length) {
-              loadChapter(state.currentStoryIndex, state.currentChapterIndex + 1, state.isPlaying, 0);
-            }
-          });
-        }
-      });
-
-      // Chạm vào nhãn số chương trên thanh player để mở danh sách chương
-      if (dom.playerChapterInfoBtn) {
-        dom.playerChapterInfoBtn.addEventListener('click', () => {
-          if (window.innerWidth < 1024) {
-            openMobileDrawer();
-          } else if (dom.chapterSidebar) {
-            dom.chapterSidebar.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }
-        });
-      }
-
-      // Đổi bộ truyện
-      if (dom.storySelect) {
-        dom.storySelect.addEventListener('change', (e) => {
-          const newIdx = Number(e.target.value) || 0;
-          loadChapter(newIdx, 0, false, 0);
-        });
-      }
-
-      // Tìm kiếm & lọc chương ở thanh bên
-      if (dom.chapterSearchInput) {
-        dom.chapterSearchInput.addEventListener('input', () => renderChapterList());
-      }
-      if (dom.filterAllChaptersBtn) {
-        dom.filterAllChaptersBtn.addEventListener('click', () => {
-          state.chapterFilterMode = 'all';
-          renderChapterList();
-        });
-      }
-      if (dom.filterBookmarkedChaptersBtn) {
-        dom.filterBookmarkedChaptersBtn.addEventListener('click', () => {
-          state.chapterFilterMode = 'bookmarked';
-          renderChapterList();
-        });
-      }
-
-      // Thu gọn / mở rộng Mục đánh dấu chương trên thanh bên
-      if (dom.toggleSidebarBookmarksBtn) {
-        dom.toggleSidebarBookmarksBtn.addEventListener('click', () => {
-          state.sidebarBookmarksExpanded = !state.sidebarBookmarksExpanded;
-          if (dom.sidebarBookmarksBody) {
-            dom.sidebarBookmarksBody.classList.toggle('hidden', !state.sidebarBookmarksExpanded);
-          }
-          if (dom.sidebarBookmarksChevron) {
-            dom.sidebarBookmarksChevron.textContent = state.sidebarBookmarksExpanded ? '▾' : '▸';
-          }
-        });
-      }
-
-      // Đánh dấu chương & cập nhật vị trí dấu trang
-      if (dom.toggleBookmarkBtn) {
-        dom.toggleBookmarkBtn.addEventListener('click', toggleCurrentChapterBookmark);
-      }
-      if (dom.updateBookmarkPositionBtn) {
-        dom.updateBookmarkPositionBtn.addEventListener('click', updateCurrentBookmarkPosition);
-      }
-
-      // Modal quản lý Mục đánh dấu chương
-      if (dom.openBookmarksModalBtn) {
-        dom.openBookmarksModalBtn.addEventListener('click', () => {
-          renderBookmarksUI();
-          dom.bookmarksModal.classList.remove('hidden');
-        });
-      }
-      if (dom.closeBookmarksModalBtn) {
-        dom.closeBookmarksModalBtn.addEventListener('click', () => dom.bookmarksModal.classList.add('hidden'));
-      }
-      if (dom.bookmarkScopeAllBtn) {
-        dom.bookmarkScopeAllBtn.addEventListener('click', () => {
-          state.bookmarkModalScope = 'all';
-          renderBookmarksUI();
-        });
-      }
-      if (dom.bookmarkScopeCurrentBtn) {
-        dom.bookmarkScopeCurrentBtn.addEventListener('click', () => {
-          state.bookmarkModalScope = 'current';
-          renderBookmarksUI();
-        });
-      }
-      if (dom.clearAllBookmarksBtn) {
-        dom.clearAllBookmarksBtn.addEventListener('click', () => {
-          if (state.bookmarks.length === 0) return;
-          state.bookmarks = [];
-          saveBookmarksToStorage();
-          updateBookmarkButtonState();
-          renderChapterList();
-          renderBookmarksUI();
-          showToast('Đã xóa toàn bộ chương đánh dấu.');
-        });
-      }
-
-      // Giao diện đọc sách (Sáng / Sepia / Tối) & Cỡ chữ
-      document.querySelectorAll('.theme-choice-btn').forEach(btn => {
-        btn.addEventListener('click', () => applyTheme(btn.dataset.themeChoice));
-      });
-      document.querySelectorAll('.font-preset-btn').forEach(btn => {
-        btn.addEventListener('click', () => applyFontSize(Number(btn.dataset.fontPreset)));
-      });
-      if (dom.decreaseFontBtn) {
-        dom.decreaseFontBtn.addEventListener('click', () => applyFontSize(state.fontSize - 1));
-      }
-      if (dom.increaseFontBtn) {
-        dom.increaseFontBtn.addEventListener('click', () => applyFontSize(state.fontSize + 1));
-      }
-
-      if (dom.autoNextChapterCheckbox) {
-        dom.autoNextChapterCheckbox.addEventListener('change', (e) => {
-          state.autoNextChapter = Boolean(e.target.checked);
-          saveStateToStorage();
-        });
-      }
-      if (dom.autoScrollCheckbox) {
-        dom.autoScrollCheckbox.addEventListener('change', (e) => {
-          state.autoScroll = Boolean(e.target.checked);
-          saveStateToStorage();
-        });
-      }
-
-      // Tốc độ đọc (Slider, Presets, Mobile Quick Toggle)
-      if (dom.speedRangeSlider) {
-        dom.speedRangeSlider.addEventListener('input', (e) => applySpeed(e.target.value));
-      }
-      if (dom.mobileSpeedRangeSlider) {
-        dom.mobileSpeedRangeSlider.addEventListener('input', (e) => applySpeed(e.target.value));
-      }
-      document.querySelectorAll('.speed-preset-btn').forEach(btn => {
-        btn.addEventListener('click', () => applySpeed(btn.dataset.speed));
-      });
-      if (dom.mobileQuickSpeedBtn) {
-        dom.mobileQuickSpeedBtn.addEventListener('click', () => {
-          const cycle = [0.85, 1.0, 1.25, 1.5, 1.75];
-          const next = cycle.find(s => s > state.rate + 0.01) || cycle[0];
-          applySpeed(next);
-        });
-      }
-
-      // Giọng đọc, Sắc thái, Cao độ, Nghe thử & Hẹn giờ tắt
-      if (dom.voiceSelect) {
-        dom.voiceSelect.addEventListener('change', (e) => {
-          state.selectedVoiceId = e.target.value;
-          saveStateToStorage();
-          if (state.isPlaying) {
-            startPlaybackFromSentence(state.currentSentenceIndex);
-          }
-        });
-      }
-
-      if (dom.showAllLanguagesCheckbox) {
-        dom.showAllLanguagesCheckbox.addEventListener('change', (e) => {
-          state.showAllLanguages = Boolean(e.target.checked);
-          populateVietnameseVoices();
-        });
-      }
-
-      if (dom.voicePresetSelect) {
-        dom.voicePresetSelect.addEventListener('change', (e) => {
-          if (e.target.value !== 'custom') {
-            applyPitch(Number(e.target.value), false);
-          }
-        });
-      }
-
-      if (dom.pitchRangeSlider) {
-        dom.pitchRangeSlider.addEventListener('input', (e) => {
-          applyPitch(Number(e.target.value), true);
-        });
-      }
-
-      if (dom.testVoiceBtn) {
-        dom.testVoiceBtn.addEventListener('click', async () => {
-          const sampleText = 'Xin chào, đây là giọng đọc tiếng Việt dùng để nghe thử truyện audio.';
-          if (dom.testVoiceBtnText) dom.testVoiceBtnText.textContent = 'Đang thử...';
-          const tempSession = ++state.playbackSessionId;
-          state.isPlaying = false;
-          updatePlayPauseUI();
-          try {
-            await speakSingleSentence(sampleText, tempSession);
-          } catch (e) {
-            showToast('Không phát được giọng nghe thử.');
-          } finally {
-            if (dom.testVoiceBtnText) dom.testVoiceBtnText.textContent = 'Nghe thử';
-          }
-        });
-      }
-
-      if (dom.sleepTimerSelect) {
-        dom.sleepTimerSelect.addEventListener('change', (e) => configureSleepTimer(e.target.value));
-      }
-
-      // Thu gọn / mở rộng bảng giọng đọc trên mobile
-      if (dom.toggleVoicePanelBtn && dom.voiceControlsRow) {
-        dom.toggleVoicePanelBtn.addEventListener('click', () => {
-          const isHidden = dom.voiceControlsRow.classList.contains('hidden');
-          dom.voiceControlsRow.classList.toggle('hidden', !isHidden);
-          dom.voiceControlsRow.classList.toggle('flex', isHidden);
-          dom.toggleVoicePanelBtn.setAttribute('aria-expanded', String(isHidden));
-          if (dom.toggleVoicePanelArrow) dom.toggleVoicePanelArrow.textContent = isHidden ? '▾' : '▴';
-          syncMainContentBottomPadding();
-        });
-      }
-
-      // Drawer mục lục & cử chỉ vuốt sang trái để đóng trên mobile
-      if (dom.toggleDrawerBtn) dom.toggleDrawerBtn.addEventListener('click', openMobileDrawer);
-      if (dom.closeDrawerBtn) dom.closeDrawerBtn.addEventListener('click', closeMobileDrawer);
-      if (dom.mobileSidebarBackdrop) dom.mobileSidebarBackdrop.addEventListener('click', closeMobileDrawer);
-
-      let touchStartX = 0;
-      if (dom.chapterSidebar) {
-        dom.chapterSidebar.addEventListener('touchstart', (e) => {
-          touchStartX = e.changedTouches[0].screenX;
-        }, { passive: true });
-        dom.chapterSidebar.addEventListener('touchend', (e) => {
-          const deltaX = e.changedTouches[0].screenX - touchStartX;
-          if (deltaX < -65) closeMobileDrawer();
-        }, { passive: true });
-      }
-
-      // Menu mở rộng 3 chấm trên mobile
-      if (dom.mobileMoreMenuBtn && dom.mobileMoreMenuDropdown) {
-        dom.mobileMoreMenuBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          dom.mobileMoreMenuDropdown.classList.toggle('hidden');
-        });
-        document.addEventListener('click', () => {
-          dom.mobileMoreMenuDropdown.classList.add('hidden');
-        });
-      }
-
-      // Làm mới dữ liệu từ thư mục data/
-      [dom.reloadHostingDataBtn, dom.mobileMenuReloadDataBtn].forEach(btn => {
-        if (btn) btn.addEventListener('click', () => loadDataFromHosting(true));
-      });
-
-      // Các Modal Hướng dẫn & Mẹo giọng AI
-      [dom.openHelpModalBtn, dom.mobileMenuHelpBtn].forEach(btn => {
-        if (btn) btn.addEventListener('click', () => dom.helpModal.classList.remove('hidden'));
-      });
-      if (dom.closeHelpModalBtn) {
-        dom.closeHelpModalBtn.addEventListener('click', () => dom.helpModal.classList.add('hidden'));
-      }
-
-      if (dom.voiceTipsBtn) {
-        dom.voiceTipsBtn.addEventListener('click', () => dom.voiceTipsModal.classList.remove('hidden'));
-      }
-      if (dom.closeVoiceTipsModalBtn) {
-        dom.closeVoiceTipsModalBtn.addEventListener('click', () => dom.voiceTipsModal.classList.add('hidden'));
-      }
-
-      // Modal Nạp thêm truyện ([Tên truyện]/Chuong_1.txt... hoặc dán văn bản)
-      const openQuickAddModal = () => {
-        if (dom.quickExistingStorySelect) {
-          dom.quickExistingStorySelect.innerHTML = '';
-          state.stories.forEach((s, i) => {
-            const opt = document.createElement('option');
-            opt.value = String(i);
-            opt.textContent = s.title;
-            dom.quickExistingStorySelect.appendChild(opt);
-          });
-          dom.quickExistingStorySelect.value = String(state.currentStoryIndex);
-        }
-        dom.quickAddStoryModal.classList.remove('hidden');
-      };
-
-      [dom.openQuickAddModalBtn, dom.mobileMenuQuickAddBtn].forEach(btn => {
-        if (btn) btn.addEventListener('click', openQuickAddModal);
-      });
-      [dom.closeQuickAddModalBtn, dom.cancelQuickAddBtn].forEach(btn => {
-        if (btn) btn.addEventListener('click', () => dom.quickAddStoryModal.classList.add('hidden'));
-      });
-
-      if (dom.quickFolderUploadInput) {
-        dom.quickFolderUploadInput.addEventListener('change', async (e) => {
-          await handleBatchFilesUpload(e.target.files, dom.quickBatchStoryTitleInput.value);
-          e.target.value = '';
-          dom.quickAddStoryModal.classList.add('hidden');
-        });
-      }
-
-      if (dom.quickMultiFilesInput) {
-        dom.quickMultiFilesInput.addEventListener('change', async (e) => {
-          await handleBatchFilesUpload(e.target.files, dom.quickBatchStoryTitleInput.value);
-          e.target.value = '';
-          dom.quickAddStoryModal.classList.add('hidden');
-        });
-      }
-
-      document.querySelectorAll('input[name="quickAddMode"]').forEach(radio => {
-        radio.addEventListener('change', (e) => {
-          const isAppend = e.target.value === 'append_chapter';
-          dom.newStoryTitleGroup.classList.toggle('hidden', isAppend);
-          dom.existingStorySelectGroup.classList.toggle('hidden', !isAppend);
-        });
-      });
-
-      if (dom.quickAddStoryForm) {
-        dom.quickAddStoryForm.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const mode = document.querySelector('input[name="quickAddMode"]:checked')?.value || 'new_story';
-          const chapTitleInput = dom.quickChapterTitleInput.value.trim();
-          const rawText = dom.quickChapterContentInput.value.trim();
-
-          if (!rawText) {
-            showToast('Vui lòng nhập hoặc dán nội dung truyện.');
-            return;
-          }
-
-          let targetStoryTitle = '';
-          if (mode === 'append_chapter') {
-            const idx = Number(dom.quickExistingStorySelect.value) || 0;
-            targetStoryTitle = state.stories[idx]?.title || 'Truyện Mới';
-          } else {
-            targetStoryTitle = dom.quickStoryTitleInput.value.trim() || `Truyện Mới ${state.stories.length + 1}`;
-          }
-
-          const newChapters = splitTextIntoChapters(rawText, chapTitleInput || 'Chương 1');
-          const existingCustomIdx = state.customStories.findIndex(s => s.title === targetStoryTitle);
-          let updatedStory;
-
-          if (existingCustomIdx >= 0) {
-            updatedStory = {
-              title: targetStoryTitle,
-              chapters: [...state.customStories[existingCustomIdx].chapters, ...newChapters]
-            };
-            state.customStories[existingCustomIdx] = updatedStory;
-          } else {
-            const existingGlobal = state.stories.find(s => s.title === targetStoryTitle);
-            updatedStory = {
-              title: targetStoryTitle,
-              chapters: existingGlobal ? [...existingGlobal.chapters, ...newChapters] : newChapters
-            };
-            state.customStories.push(updatedStory);
-          }
-
-          await saveCustomStoryToDB(updatedStory);
-          rebuildCombinedStoriesLibrary();
-          renderStorySelector();
-
-          const storyIdx = state.stories.findIndex(s => s.title === targetStoryTitle);
-          const jumpChapterIdx = Math.max(0, (state.stories[storyIdx]?.chapters.length || 1) - newChapters.length);
-          loadChapter(storyIdx, jumpChapterIdx, false, 0);
-
-          dom.quickChapterContentInput.value = '';
-          dom.quickAddStoryModal.classList.add('hidden');
-          showToast(`Đã thêm ${newChapters.length} chương vào "${targetStoryTitle}".`);
-        });
-      }
-
-      // Đóng modal khi bấm ra vùng nền tối bên ngoài
-      [dom.helpModal, dom.quickAddStoryModal, dom.voiceTipsModal, dom.bookmarksModal].forEach(modal => {
-        if (modal) {
-          modal.addEventListener('click', (e) => {
-            if (e.target === modal) modal.classList.add('hidden');
-          });
-        }
-      });
-
-      // Phím tắt bàn phím: Space (Play/Pause), B (Đánh dấu), M (Mục đánh dấu), Esc (Đóng modal)
-      document.addEventListener('keydown', (e) => {
-        if (state.isLocked) return;
-        const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
-        const isTyping = tag === 'input' || tag === 'textarea' || tag === 'select';
-
-        if (e.key === 'Escape') {
-          [dom.helpModal, dom.quickAddStoryModal, dom.voiceTipsModal, dom.bookmarksModal].forEach(m => {
-            if (m) m.classList.add('hidden');
-          });
-          closeMobileDrawer();
-          return;
-        }
-
-        if (isTyping) return;
-
-        if (e.code === 'Space') {
-          e.preventDefault();
-          if (dom.playPauseBtn) dom.playPauseBtn.click();
-        } else if (e.key === 'b' || e.key === 'B') {
-          e.preventDefault();
-          toggleCurrentChapterBookmark();
-        } else if (e.key === 'm' || e.key === 'M') {
-          e.preventDefault();
-          renderBookmarksUI();
-          dom.bookmarksModal.classList.remove('hidden');
-        }
-      });
-
-      // Tự động điều chỉnh khoảng đệm đáy theo chiều cao thanh audio player trên mobile
-      if (window.ResizeObserver && dom.audioPlayerFooter) {
-        const ro = new ResizeObserver(() => syncMainContentBottomPadding());
-        ro.observe(dom.audioPlayerFooter);
-      }
-      window.addEventListener('resize', syncMainContentBottomPadding);
-    }
-
-    // =========================================================================
-    // 13. XỬ LÝ LOADING PAGE & XÁC THỰC MÃ KHÓA (Mothaiba@123)
-    // =========================================================================
-    function updateAuthLoadingProgress(percent, statusText) {
-      if (dom.authLoadingBar) dom.authLoadingBar.style.width = `${percent}%`;
-      if (dom.authLoadingPercentText) dom.authLoadingPercentText.textContent = `${percent}%`;
-      if (dom.authLoadingStatusText && statusText) dom.authLoadingStatusText.textContent = statusText;
-    }
-
-    function unlockWebsite(skipAnimation = false) {
-      state.isLocked = false;
-      document.body.style.overflow = '';
-      if (!dom.authGateOverlay) return;
-
-      if (skipAnimation) {
-        dom.authGateOverlay.classList.add('hidden');
-      } else {
-        dom.authGateOverlay.classList.add('opacity-0', 'pointer-events-none');
-        setTimeout(() => {
-          dom.authGateOverlay.classList.add('hidden');
-        }, 480);
-      }
-      syncMainContentBottomPadding();
-    }
-
-    function initAuthGate() {
-      // Kiểm tra nếu thiết bị đã được ghi nhớ mở khóa trước đó
-      if (safeStorage.getItem(AUTH_STORAGE_KEY) === 'unlocked') {
-        unlockWebsite(true);
-        return;
-      }
-
-      state.isLocked = true;
-      document.body.style.overflow = 'hidden';
-
-      // Nút ẩn / hiện mật khẩu
-      if (dom.toggleAuthKeyVisibilityBtn) {
-        dom.toggleAuthKeyVisibilityBtn.addEventListener('click', () => {
-          const isPassword = dom.authKeyInput.type === 'password';
-          dom.authKeyInput.type = isPassword ? 'text' : 'password';
-          dom.authEyeOpenIcon.classList.toggle('hidden', isPassword);
-          dom.authEyeClosedIcon.classList.toggle('hidden', !isPassword);
-          dom.authKeyInput.focus();
-        });
-      }
-
-      // Xóa thông báo lỗi ngay khi người dùng nhập lại
-      if (dom.authKeyInput) {
-        dom.authKeyInput.addEventListener('input', () => {
-          dom.authErrorMsg.classList.add('hidden');
-          dom.authKeyInput.style.borderColor = 'var(--border-color)';
-        });
-      }
-
-      // Kiểm tra mã khóa khi bấm xác nhận hoặc nhấn Enter
-      if (dom.authGateForm) {
-        dom.authGateForm.addEventListener('submit', (e) => {
-          e.preventDefault();
-          const enteredKey = dom.authKeyInput.value;
-
-          if (enteredKey === REQUIRED_ACCESS_KEY) {
-            dom.authErrorMsg.classList.add('hidden');
-            if (dom.authRememberCheckbox && dom.authRememberCheckbox.checked) {
-              safeStorage.setItem(AUTH_STORAGE_KEY, 'unlocked');
-            }
-            unlockWebsite(false);
-            showToast('Xác thực thành công! Chào mừng bạn vào trang nghe truyện.');
-          } else {
-            dom.authErrorMsg.classList.remove('hidden');
-            dom.authKeyInput.style.borderColor = '#ef4444';
-            if (dom.authGateCard) {
-              dom.authGateCard.classList.remove('gate-shake');
-              void dom.authGateCard.offsetWidth;
-              dom.authGateCard.classList.add('gate-shake');
-            }
-            dom.authKeyInput.select();
-            dom.authKeyInput.focus();
-          }
-        });
-      }
-    }
-
-    async function bootstrapApp() {
-      loadBookmarksFromStorage();
-      const savedState = restoreStateFromStorage();
-
-      applyTheme(state.theme);
-      applyFontSize(state.fontSize);
-      applySpeed(state.rate);
-      applyPitch(state.pitch, true);
-
-      initAuthGate();
-      updateAuthLoadingProgress(55, 'Đang khởi tạo bộ giọng đọc tiếng Việt...');
-
-      populateVietnameseVoices();
-      if (window.speechSynthesis && typeof window.speechSynthesis.onvoiceschanged !== 'undefined') {
-        window.speechSynthesis.onvoiceschanged = populateVietnameseVoices;
-      }
-
-      initEventListeners();
-      updateAuthLoadingProgress(75, 'Đang quét danh sách truyện từ thư mục data/...');
-
-      // Nạp các truyện người dùng đã thêm cục bộ trong IndexedDB (nếu có)
-      state.customStories = await loadCustomStoriesFromDB();
-
-      // Tự động quét & nạp dữ liệu từ thư mục data/ trên hosting
-      await loadDataFromHosting(false);
-
-      // Khôi phục đúng bộ truyện, chương và câu đang nghe dở
-      if (savedState && savedState.storyTitle) {
-        const foundIdx = state.stories.findIndex(s => s.title === savedState.storyTitle);
-        if (foundIdx >= 0) {
-          loadChapter(foundIdx, savedState.chapterIndex || 0, false, savedState.sentenceIndex || 0);
-        }
-      }
-
-      renderBookmarksUI();
-      syncMainContentBottomPadding();
-      updateAuthLoadingProgress(100, 'Thư viện đã sẵn sàng • Nhập mã khóa để vào trang');
-    }
-
-    window.addEventListener('DOMContentLoaded', bootstrapApp);
+    // 10. Kích hoạt
+    initAuth();
   </script>
 </body>
 </html>
