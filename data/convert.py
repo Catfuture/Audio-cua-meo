@@ -4,7 +4,7 @@ import re
 import json
 
 # ==========================================
-# CẤU HÌNH
+# CẤU HÌNH Tự tạo file stories.json  
 # ==========================================
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

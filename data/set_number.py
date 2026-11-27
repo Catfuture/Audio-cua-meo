@@ -6,7 +6,7 @@ folder = "DanhSach_File"
 os.makedirs(folder, exist_ok=True)
 
 # Tạo 100 file txt
-for i in range(313, 508):
+for i in range(193, 205):
     filename = f"Chuong_{i}.txt"
     filepath = os.path.join(folder, filename)
 
